@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EWS 10% स्व-घोषणापत्र (डेमो प्रत)</title>
+<style>
+  body { font-family: 'Nirmala UI', sans-serif; background: #f4f6fb; color: #222; margin: 0; padding: 16px; }
+  .demo { background: #d00000; color: #fff; padding: 8px 12px; font-weight: bold; margin-bottom: 12px; }
+  h1 { font-size: 22px; color: #0b4f6c; }
+  .sec { background: #fff; border: 1px solid #ddd; margin-bottom: 14px; }
+  .sec h2 { background: #36495f; color: #fff; font-size: 16px; margin: 0; padding: 10px 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px 18px; padding: 14px; }
+  label { display: block; font-size: 14px; margin-bottom: 4px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; font-size: 14px; }
+  input[readonly] { background: #eee; }
+  .req { color: #d00; }
+  button { margin: 8px 14px 16px; padding: 10px 24px; font-size: 15px; }
+  #result { padding: 0 14px 14px; font-weight: bold; color: #0a7d2c; }
+</style>
+</head>
+<body>
+<div class="demo">डेमो प्रत — DEMO COPY of the Aaple Sarkar "EWS 10% Self-Declaration" form for offline rehearsal. Field ids match the real portal. This is not a government website.</div>
+<h1>EWS 10% स्व-घोषणापत्र</h1>
+
+<div class="sec"><h2>अर्जदाराचे तपशील</h2><div class="grid">
+  <div><label for="BasicInformation_ApplicantName">पूर्ण नाव (इंग्रजी) <span class="req">*</span></label><input id="BasicInformation_ApplicantName" value="DEMO APPLICANT" readonly></div>
+  <div><label for="BasicInformation_ApplicantNameMarathi">पूर्ण नाव (मराठी) <span class="req">*</span></label><input id="BasicInformation_ApplicantNameMarathi" value="डेमो अर्जदार" readonly></div>
+  <div><label for="BasicInformation_DateOfBirth">जन्मतारीख</label><input id="BasicInformation_DateOfBirth" value="" readonly></div>
+  <div><label for="BasicInformation_ApplicantUIDNo">आधार क्रमांक</label><input id="BasicInformation_ApplicantUIDNo"></div>
+  <div><label for="Address_ApplicantAddress">पत्ता <span class="req">*</span></label><input id="Address_ApplicantAddress"></div>
+  <div><label for="Address_DistrictCode">जिल्हा <span class="req">*</span></label><select id="Address_DistrictCode" class="district"></select></div>
+  <div><label for="Address_ApplicantPincode">पिनकोड क्र. <span class="req">*</span></label><input id="Address_ApplicantPincode"></div>
+</div></div>
+
+<div class="sec"><h2>लाभार्थीचे तपशील</h2><div class="grid">
+  <div><label for="ddlbenfRelation_Value">लाभार्थीचे अर्जदारासोबतचे नाते <span class="req">*</span></label>
+    <select id="ddlbenfRelation_Value"><option value="">---Select---</option><option value="r-self">Self</option><option value="r-son">Son</option><option value="r-daughter">Daughter</option><option value="r-wife">Wife</option></select></div>
+  <div><label for="txt_relation_nameofBeneficaryEn">पूर्ण नाव (इंग्रजी) <span class="req">*</span></label><input id="txt_relation_nameofBeneficaryEn"></div>
+  <div><label for="txt_relation_nameofBeneficaryMar">पूर्ण नाव (मराठी) <span class="req">*</span></label><input id="txt_relation_nameofBeneficaryMar"></div>
+  <div><label for="txt_RelationDOB">जन्मतारीख</label><input id="txt_RelationDOB" placeholder="DD/MM/YYYY"></div>
+  <div><label for="ddl_RelationGender_Value">लिंग <span class="req">*</span></label>
+    <select id="ddl_RelationGender_Value"><option value="">---निवडा---</option><option value="11d79d04-3bcf-4389-9466-7e4ac80a5f5d">पुरुष</option><option value="3665f1da-cdc8-4443-8649-c70563ec758f">स्त्री</option><option value="4738a78e-a3b7-4e4d-8707-2545e49a9bfc">इतर</option></select></div>
+  <div><label for="txt_UIDNo">आधार क्रमांक</label><input id="txt_UIDNo"></div>
+  <div><label for="txtRelationCaste">जात <span class="req">*</span></label><input id="txtRelationCaste"></div>
+</div></div>
+
+<div class="sec"><h2>Details of Land</h2><div class="grid">
+  <div><label for="txtlandHolder_Name">Land Holder Name (English)</label><input id="txtlandHolder_Name"></div>
+  <div><label for="txtLandHolder_nameLL">Land Holder Name (Marathi)</label><input id="txtLandHolder_nameLL"></div>
+  <div><label for="ddlland_dist_Value">District</label><select id="ddlland_dist_Value" class="district"></select></div>
+  <div><label for="ddlland_subdist_Value">Taluka</label><select id="ddlland_subdist_Value"><option value="">---निवडा---</option></select></div>
+  <div><label for="ddlland_vill_Value">Village</label><select id="ddlland_vill_Value"><option value="">---निवडा---</option></select></div>
+  <div><label for="txtgatno">Group No</label><input id="txtgatno"></div>
+  <div><label for="txtland_Area">Area</label><input id="txtland_Area" value="0"></div>
+  <div><label for="ddlland_unit_Value">Unit</label>
+    <select id="ddlland_unit_Value"><option value="">---निवडा---</option><option value="u-are">आर</option><option value="u-acre">एकर</option><option value="u-guntha">गुंठे</option><option value="u-ha">हेक्टर</option></select></div>
+</div></div>
+
+<div class="sec"><h2>Family income details from other resources</h2><div class="grid">
+  <div><label for="txt_IncomeFromSalary">वेतन / मजुरी पासूनचे उत्पन्न <span class="req">*</span></label><input id="txt_IncomeFromSalary" class="inc"></div>
+  <div><label for="txt_IncomeFromBusiness">व्यवसाय उद्योगापासूनचे उत्पन्न <span class="req">*</span></label><input id="txt_IncomeFromBusiness" class="inc"></div>
+  <div><label for="txt_IncomeFromAgriCulture">कृषी उत्पन्न <span class="req">*</span></label><input id="txt_IncomeFromAgriCulture" class="inc"></div>
+  <div><label for="txt_IncomeFromInvestment">गुंतवणुकीच्या स्तोत्रातून प्राप्ती <span class="req">*</span></label><input id="txt_IncomeFromInvestment" class="inc"></div>
+  <div><label for="txt_IncomeFromOthers">वरील स्तोत्राव्यतिरिक्त उत्पन्न <span class="req">*</span></label><input id="txt_IncomeFromOthers" class="inc"></div>
+  <div><label for="txt_totalIncome">एकूण उत्पन्न <span class="req">*</span></label><input id="txt_totalIncome" readonly></div>
+</div></div>
+
+<div class="sec"><h2>दस्तऐवज अपलोड करा (Upload Documents)</h2><div class="grid">
+  <div><label for="upl_identity">ओळखीचा पुरावा — आधार कार्ड (Proof of identity — Aadhaar card)</label><input type="file" id="upl_identity" accept=".jpg,.jpeg,.png,.pdf"></div>
+  <div><label for="upl_address">पत्त्याचा पुरावा — ७/१२ व ८अ उतारा (Address proof — Excerpt from 7/12 and 8A)</label><input type="file" id="upl_address" accept=".jpg,.jpeg,.png,.pdf"></div>
+  <div><label for="upl_income">उत्पन्नाचा पुरावा (Income proof)</label><input type="file" id="upl_income" accept=".jpg,.jpeg,.pdf"></div>
+</div>
+<p style="padding:0 14px 14px;margin:0;font-size:13px;color:#555">JPG / PDF · कमाल 500 KB (max 500 KB)</p></div>
+
+<div class="sec"><div class="grid"><div><label><input type="checkbox" id="checkboxPrimary" style="width:auto"> I Agree</label></div></div>
+  <button type="button" id="submitBtn">सादर करा</button>
+  <div id="result"></div>
+</div>
+
+<script>
+  // Dependent dropdowns, as on the real portal: the next list loads only after a change.
+  // The delay imitates the portal's server round trip. Codes for districts are the real ones.
+  var DISTRICTS = [['521', 'पुणे'], ['523', 'बीड'], ['524', 'लातूर'], ['527', 'सातारा'], ['528', 'रत्नागिरी']];
+  var TALUKAS = {
+    '521': [['4101', 'हवेली'], ['4102', 'मुळशी'], ['4103', 'मावळ'], ['4104', 'पुणे शहर'], ['4105', 'बारामती']],
+    '527': [['4201', 'सातारा'], ['4202', 'कराड']]
+  };
+  var VILLAGES = {
+    '4101': [['410101', 'वडगाव'], ['410102', 'वडगाव शेरी'], ['410103', 'खडकवासला'], ['410104', 'लोणी काळभोर']],
+    '4102': [['410201', 'पौड']],
+    '4202': [['420201', 'मलकापूर']]
+  };
+  function fill(sel, rows) {
+    sel.innerHTML = '<option value="">---निवडा---</option>';
+    rows.forEach(function (r) { var o = document.createElement('option'); o.value = r[0]; o.textContent = r[1]; sel.appendChild(o); });
+  }
+  document.querySelectorAll('select.district').forEach(function (s) { fill(s, DISTRICTS); });
+  var land = { d: document.getElementById('ddlland_dist_Value'), t: document.getElementById('ddlland_subdist_Value'), v: document.getElementById('ddlland_vill_Value') };
+  land.d.addEventListener('change', function () {
+    fill(land.t, []); fill(land.v, []);
+    setTimeout(function () { fill(land.t, TALUKAS[land.d.value] || []); }, 400);
+  });
+  land.t.addEventListener('change', function () {
+    fill(land.v, []);
+    setTimeout(function () { fill(land.v, VILLAGES[land.t.value] || []); }, 400);
+  });
+  document.querySelectorAll('input.inc').forEach(function (i) {
+    i.addEventListener('input', function () {
+      var sum = 0;
+      document.querySelectorAll('input.inc').forEach(function (x) { sum += Number(x.value) || 0; });
+      document.getElementById('txt_totalIncome').value = sum;
+    });
+  });
+  // D11: this product never submits. The stub only shows text.
+  document.getElementById('submitBtn').addEventListener('click', function () {
+    document.getElementById('result').textContent = 'सादर केले';
+  });
+</script>
+</body>
+</html>

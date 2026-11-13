@@ -29,6 +29,7 @@ export const SCHEMAS = {
   "document_type": "IDENTITY_CARD",
   "full_name": "String - The full name EXACTLY as printed, in the script printed on the document",
   "full_name_latin": "String - The same name in Roman script. If the document prints an English version, copy that EXACTLY. Otherwise transliterate it.",
+  "full_name_latin_printed": "Boolean - true if that Roman-script name is printed on the document, false if you transliterated it",
   "date_of_birth": "String - Format strictly as YYYY-MM-DD. If only birth year is visible, output YYYY",
   "gender": "String - MALE, FEMALE, or OTHER",
   "address": "String - The complete printed address, combining all lines. Do NOT include the word 'Address' or any other field label.",
@@ -60,6 +61,40 @@ export const SCHEMAS = {
   "record_print_date": "String - The print/issue date stamped on the extract, formatted YYYY-MM-DD. Output NULL if no date is printed."
 }`,
 };
+
+// Phase 9: a 7/12 is read in two passes. Measured on a SAMPLE 7/12: the strict JSON prompt
+// returned NULL for every field on a full page, while a plain transcription prompt read the
+// village, taluka, district and every owner correctly. Pass 1 transcribes the image as plain
+// text; pass 2 structures that text with the normal system prompt and schema, with no image.
+export const LAND_TRANSCRIBE_PROMPT = `Transcribe this land record (7/12 extract) as plain text. Copy text exactly as printed, in the script printed. Keep Devanagari digits as printed. Output these lines, one per item:
+गाव (village): ...
+तालुका (taluka): ...
+जिल्हा (district): ...
+गट क्रमांक / survey number: ...
+Owner table rows (one line each): खाते क्र | भोगवटादाराचे नाव | क्षेत्र | आकार
+Total area (एकूण क्षेत्र): ...
+Every date printed anywhere on the page: ...
+Write NULL for anything you cannot read.`;
+
+const LAND_SCHEMA_INTRO = 'Analyze the attached agricultural land record (7/12 extract). This document may contain complex tables and regional languages. ';
+
+export function landStructurePrompt(transcript) {
+  return `The following is a plain-text transcription of a land record (7/12 extract). Use ONLY this text as the source.\n\n---\n${transcript}\n---\n\n${SCHEMAS.land.replace(LAND_SCHEMA_INTRO, '')}`;
+}
+
+// Phase 9: the model misreads Devanagari digits (४ read as ८; ४५/२ returned as 842),
+// confidently and even at 2x resolution. Numbers on a 7/12 are therefore never taken from
+// the model: they are blanked and listed in needs_operator, and the operator types them
+// from the paper extract. A wrong survey number on a government form is the exact silent
+// failure this product exists to prevent.
+export const LAND_OPERATOR_FIELDS = ['survey_number', 'total_area_hectares', 'record_print_date'];
+
+export function applyOperatorFields(land) {
+  const out = { ...land };
+  for (const k of LAND_OPERATOR_FIELDS) out[k] = null;
+  out.needs_operator = [...LAND_OPERATOR_FIELDS];
+  return out;
+}
 
 /**
  * Strips markdown fences and anything outside the outermost JSON object.
@@ -100,6 +135,31 @@ async function callOllama(imageBuffer, docType) {
   return data.response;
 }
 
+async function ollamaGenerate(body, extraOptions = {}) {
+  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: VLM_MODEL,
+      stream: false,
+      options: { temperature: 0, ...extraOptions },
+      ...body,
+    }),
+  });
+  if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.response;
+}
+
+async function callOllamaLand(imageBuffer) {
+  // num_predict caps pass 1: on one test the model looped on a single line 68 times.
+  const transcript = await ollamaGenerate(
+    { prompt: LAND_TRANSCRIBE_PROMPT, images: [imageBuffer.toString('base64')] },
+    { num_predict: 600 },
+  );
+  return ollamaGenerate({ system: SYSTEM_PROMPT, prompt: landStructurePrompt(transcript) });
+}
+
 /**
  * The one function the whole pipeline depends on.
  * @param {Buffer} imageBuffer
@@ -121,11 +181,34 @@ export async function extractDocument(imageBuffer, docType) {
   // One retry. Models fail to close JSON often enough that this is worth it.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const raw = await callOllama(imageBuffer, docType);
-      return maskIdNumbers(sanitiseJson(raw));
+      const raw = docType === 'land'
+        ? await callOllamaLand(imageBuffer)
+        : await callOllama(imageBuffer, docType);
+      const data = maskIdNumbers(sanitiseJson(raw));
+      return docType === 'land' ? applyOperatorFields(data) : data;
     } catch (err) {
       console.warn(`[extract] attempt ${attempt} failed for ${docType}: ${err.message}`);
       if (attempt === 2) throw err;
     }
   }
+}
+
+/**
+ * Phase 14 (R1): which document is this? Used by upload capture when the upload slot's
+ * label does not say. Returns 'identity' | 'income' | 'land' | null. Mock mode: null.
+ */
+export async function classifyDocument(imageBuffer) {
+  if (USE_MOCK) return null;
+  const raw = await ollamaGenerate(
+    {
+      prompt: 'Which document is this image? Answer with exactly one word: AADHAAR, INCOME, LAND or OTHER. LAND means a 7/12 extract (सातबारा) or another land record. INCOME means an income certificate (उत्पन्नाचा दाखला / आय प्रमाण पत्र).',
+      images: [imageBuffer.toString('base64')],
+    },
+    { num_predict: 5 },
+  );
+  const w = String(raw).toUpperCase();
+  if (w.includes('AADHAAR')) return 'identity';
+  if (w.includes('INCOME')) return 'income';
+  if (w.includes('LAND')) return 'land';
+  return null;
 }

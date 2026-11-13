@@ -2,7 +2,7 @@
 // Works right now with zero AI, zero WhatsApp. Dev 4 lives in this file.
 
 import fs from 'node:fs';
-import { validateEWS, namesMatch, monthsSince } from './rulebook.js';
+import { validateEWS, namesMatch, monthsSince, parseHectares, toAsciiDigits, validateDocument } from './rulebook.js';
 
 const load = (f) => JSON.parse(fs.readFileSync(`fixtures/${f}.json`, 'utf8'));
 const NOW = new Date('2026-11-13');
@@ -93,6 +93,54 @@ check('Pawar vs Patil caught in latin form',
   badCross.errors.some((e) => e.key === 'name_mismatch'));
 check('error reports the printed Devanagari name',
   badCross.errors.some((e) => String(e.params?.a).includes('रमेश')));
+
+console.log('\nLand checks (Phase 9)');
+check('Devanagari digits converted', toAsciiDigits('४५/२') === '45/2');
+check('7/12 H.R.SqM area parsed', Math.abs(parseHectares('०.८१.००') - 0.81) < 1e-9);
+check('plain hectares parsed', parseHectares('1.21') === 1.21);
+check('NULL area is null', parseHectares('NULL') === null);
+
+const base = { identity: load('identity'), income: load('income'), purpose: 'School admission' };
+const big = validateEWS({ ...base, land: { ...load('land'), total_area_hectares: '2.50' } }, NOW);
+check('land of 2.50 ha rejected', big.errors.some((e) => e.key === 'land_too_large'));
+const noArea = validateEWS({ ...base, land: { ...load('land'), total_area_hectares: 'NULL' } }, NOW);
+check('unreadable area is an error', noArea.errors.some((e) => e.key === 'land_area_unreadable'));
+const noDate = validateEWS({ ...base, land: { ...load('land'), record_print_date: 'NULL' } }, NOW);
+check('unreadable land date is an error', noDate.errors.some((e) => e.key === 'land_date_unreadable'));
+
+const opLand = {
+  ...load('land'), survey_number: null, total_area_hectares: null, record_print_date: null,
+  needs_operator: ['survey_number', 'total_area_hectares', 'record_print_date'],
+};
+const op = validateEWS({ ...base, land: opLand }, NOW);
+check('operator fields do not fail validation', op.ok === true);
+check('operator notice raised', op.notices.some((e) => e.key === 'land_operator_entry'));
+check('clean profile has no notices', good.notices.length === 0);
+
+console.log('\nFormat (BUILD_SPEC §5.1 check 6)');
+const withPin = (p) => validateEWS({ ...base, identity: { ...load('identity'), pin_code: p }, land: load('land') }, NOW);
+check('5-digit PIN rejected', withPin('43171').errors.some((e) => e.key === 'pin_invalid'));
+check('NULL PIN rejected', withPin('NULL').errors.some((e) => e.key === 'pin_invalid'));
+check('Devanagari-digit PIN accepted', !withPin('४३१७१४').errors.some((e) => e.key === 'pin_invalid'));
+const noSurvey = validateEWS({ ...base, land: { ...load('land'), survey_number: '' } }, NOW);
+check('empty survey number rejected', noSurvey.errors.some((e) => e.key === 'survey_missing'));
+check('operator-typed survey number exempt', !op.errors.some((e) => e.key === 'survey_missing'));
+console.log('\nPer-document validation (Phase 14, upload capture)');
+const vd = (type, doc, profile = {}) => validateDocument(type, doc, { profile, now: NOW });
+check('Aadhaar alone passes', vd('identity', load('identity')).ok === true);
+check('Aadhaar with bad PIN fails', vd('identity', { ...load('identity'), pin_code: '4317' }).errors.some((e) => e.key === 'pin_invalid'));
+check('Aadhaar vs other person\'s 7/12 caught', vd('identity', load('identity'), { land: load('land_mismatch') }).errors.some((e) => e.key === 'name_mismatch'));
+check('income certificate alone passes', vd('income', load('income')).ok === true);
+check('stale income certificate caught', vd('income', { ...load('income'), issue_date: '2025-01-01' }).errors.some((e) => e.key === 'income_stale'));
+check('income certificate of another person caught',
+  vd('income', { ...load('income'), applicant_name: 'Suresh Kale', applicant_name_latin: 'Suresh Kale' }, { identity: load('identity') })
+    .errors.some((e) => e.key === 'income_name_mismatch'));
+check('7/12 of the same person passes', vd('land', load('land'), { identity: load('identity') }).ok === true);
+check('operator-typed 7/12 numbers raise a notice, not an error', (() => {
+  const r = vd('land', { ...load('land'), survey_number: null, total_area_hectares: null, record_print_date: null,
+    needs_operator: ['survey_number', 'total_area_hectares', 'record_print_date'] });
+  return r.ok === true && r.notices.some((n) => n.key === 'land_operator_entry');
+})());
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

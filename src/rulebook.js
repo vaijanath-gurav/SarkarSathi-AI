@@ -5,6 +5,26 @@
 const EWS_INCOME_CEILING = 800000;      // ₹8 lakh/yr
 const INCOME_CERT_MAX_AGE_MONTHS = 12;
 const LAND_RECORD_MAX_AGE_MONTHS = 6;
+const LAND_AREA_MAX_HECTARES = 2.0234;   // 5 acres, central EWS criterion
+
+/** "४५/२" -> "45/2". Devanagari digits are U+0966..U+096F. */
+export function toAsciiDigits(s) {
+  return String(s).replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x0966));
+}
+
+/**
+ * Land area in hectares, or null if unreadable.
+ * Accepts plain hectares ("1.21") and the 7/12 H.R.SqM form ("0.81.00" = 0 ha 81 are 0 m²).
+ */
+export function parseHectares(v) {
+  if (v == null || v === 'NULL') return null;
+  const s = toAsciiDigits(v).trim();
+  const hrs = s.match(/^(\d+)\.(\d{1,2})\.(\d{1,2})$/);
+  if (hrs) return Number(hrs[1]) + Number(hrs[2]) / 100 + Number(hrs[3]) / 10000;
+  if (!/\d/.test(s)) return null;
+  const n = Number(s.replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
 
 const HONORIFICS = /\b(shri|smt|mr|mrs|ms|kum|dr|late)\b\.?/gi;
 
@@ -80,7 +100,7 @@ export function matchNameList(obj, field) {
 
 export function monthsSince(dateStr, now = new Date()) {
   if (!dateStr || dateStr === 'NULL') return null;
-  const d = new Date(dateStr);
+  const d = new Date(toAsciiDigits(dateStr));
   if (Number.isNaN(d.getTime())) return null;
   return (now.getFullYear() - d.getFullYear()) * 12
     + (now.getMonth() - d.getMonth())
@@ -101,12 +121,12 @@ export function validateEWS(profile, now = new Date()) {
   if (!identity) missing.push('identity');
   if (!income) missing.push('income');
   if (!land) missing.push('land');
-  if (missing.length) return { ok: false, errors, missing };
+  if (missing.length) return { ok: false, errors, missing, notices: [] };
 
   // --- quality gate first: no point validating an unreadable scan ---
   if (identity.image_quality_flag === true) {
     errors.push({ key: 'blurry_retry', params: {} });
-    return { ok: false, errors, missing };
+    return { ok: false, errors, missing, notices: [] };
   }
 
   // --- cross-document name match (the money shot on stage) ---
@@ -131,6 +151,12 @@ export function validateEWS(profile, now = new Date()) {
     });
   }
 
+  // --- Phase 9: fields the operator types from the paper 7/12 ---
+  // Exempt from the unreadable checks below; the operator is told instead.
+  const notices = [];
+  const operatorFields = Array.isArray(land.needs_operator) ? land.needs_operator : [];
+  if (operatorFields.length) notices.push({ key: 'land_operator_entry', params: {} });
+
   // --- recency ---
   const incomeAge = monthsSince(income.issue_date, now);
   if (incomeAge === null) {
@@ -140,7 +166,11 @@ export function validateEWS(profile, now = new Date()) {
   }
 
   const landAge = monthsSince(land.record_print_date, now);
-  if (landAge !== null && landAge > LAND_RECORD_MAX_AGE_MONTHS) {
+  if (landAge === null) {
+    if (!operatorFields.includes('record_print_date')) {
+      errors.push({ key: 'land_date_unreadable', params: {} });
+    }
+  } else if (landAge > LAND_RECORD_MAX_AGE_MONTHS) {
     errors.push({ key: 'land_stale', params: { d: land.record_print_date } });
   }
 
@@ -152,8 +182,108 @@ export function validateEWS(profile, now = new Date()) {
     errors.push({ key: 'income_too_high', params: { n: amount.toLocaleString('en-IN') } });
   }
 
+  // --- land size: central EWS criterion, < 5 acres ---
+  const hectares = parseHectares(land.total_area_hectares);
+  if (hectares === null) {
+    if (!operatorFields.includes('total_area_hectares')) {
+      errors.push({ key: 'land_area_unreadable', params: {} });
+    }
+  } else if (hectares >= LAND_AREA_MAX_HECTARES) {
+    errors.push({ key: 'land_too_large', params: { n: hectares.toFixed(2) } });
+  }
+
+  // --- format: BUILD_SPEC §5.1 check 6 ---
+  const pin = toAsciiDigits(identity.pin_code ?? '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(pin)) {
+    errors.push({ key: 'pin_invalid', params: { p: identity.pin_code ?? '—' } });
+  }
+  const survey = land.survey_number;
+  const surveyEmpty = survey == null || survey === 'NULL' || String(survey).trim() === '';
+  if (surveyEmpty && !operatorFields.includes('survey_number')) {
+    errors.push({ key: 'survey_missing', params: {} });
+  }
+
   // --- field present on no document ---
   if (!profile.purpose) missing.push('purpose');
 
-  return { ok: errors.length === 0 && missing.length === 0, errors, missing };
+  return { ok: errors.length === 0 && missing.length === 0, errors, missing, notices };
+}
+
+/**
+ * Phase 14 (R1, R8): validate ONE document on its own — the upload-capture check.
+ * The same BUILD_SPEC §5.1 rules as validateEWS, applied to what this one document can be
+ * judged on, plus a same-person check against the client's other documents when known.
+ * Judges only; produces no data for filling.
+ * @returns {{ok:boolean, errors:Array, notices:Array}}
+ */
+export function validateDocument(docType, doc, { profile = {}, now = new Date() } = {}) {
+  const errors = [];
+  const notices = [];
+  const nm = (v) => (v && v !== 'NULL' ? v : '');
+  if (!doc) return { ok: false, errors: [{ key: 'extract_failed', params: {} }], notices };
+
+  if (docType === 'identity') {
+    if (doc.image_quality_flag === true) {
+      errors.push({ key: 'blurry_retry', params: {} });
+      return { ok: false, errors, notices };
+    }
+    const idName = nm(matchName(doc, 'full_name'));
+    if (!idName) errors.push({ key: 'name_unreadable', params: {} });
+    const pin = toAsciiDigits(doc.pin_code ?? '').replace(/\s/g, '');
+    if (!/^\d{6}$/.test(pin)) errors.push({ key: 'pin_invalid', params: { p: doc.pin_code ?? '—' } });
+    if (idName && profile.land) {
+      const owners = matchNameList(profile.land, 'owner_names');
+      if (owners.length && !owners.some((o) => namesMatch(idName, o))) {
+        errors.push({ key: 'name_mismatch', params: { a: doc.full_name || idName, b: (profile.land.owner_names || [])[0] || owners[0] } });
+      }
+    }
+    const incName = profile.income ? nm(matchName(profile.income, 'applicant_name')) : '';
+    if (idName && incName && !namesMatch(idName, incName)) {
+      errors.push({ key: 'income_name_mismatch', params: { a: doc.full_name || idName, b: profile.income.applicant_name } });
+    }
+  }
+
+  if (docType === 'income') {
+    const incName = nm(matchName(doc, 'applicant_name'));
+    if (!incName) errors.push({ key: 'name_unreadable', params: {} });
+    const age = monthsSince(doc.issue_date, now);
+    if (age === null) errors.push({ key: 'income_date_unreadable', params: {} });
+    else if (age > INCOME_CERT_MAX_AGE_MONTHS) errors.push({ key: 'income_stale', params: { d: doc.issue_date } });
+    const amount = Number(String(doc.certified_annual_income).replace(/[^\d.]/g, ''));
+    if (!Number.isFinite(amount) || amount === 0) errors.push({ key: 'income_unreadable', params: {} });
+    else if (amount > EWS_INCOME_CEILING) errors.push({ key: 'income_too_high', params: { n: amount.toLocaleString('en-IN') } });
+    const idName = profile.identity ? nm(matchName(profile.identity, 'full_name')) : '';
+    if (idName && incName && !namesMatch(idName, incName)) {
+      errors.push({ key: 'income_name_mismatch', params: { a: profile.identity.full_name || idName, b: doc.applicant_name } });
+    }
+  }
+
+  if (docType === 'land') {
+    const op = Array.isArray(doc.needs_operator) ? doc.needs_operator : [];
+    if (op.length) notices.push({ key: 'land_operator_entry', params: {} });
+    const owners = matchNameList(doc, 'owner_names').filter((o) => nm(o));
+    if (!owners.length) errors.push({ key: 'name_unreadable', params: {} });
+    const age = monthsSince(doc.record_print_date, now);
+    if (age === null) {
+      if (!op.includes('record_print_date')) errors.push({ key: 'land_date_unreadable', params: {} });
+    } else if (age > LAND_RECORD_MAX_AGE_MONTHS) {
+      errors.push({ key: 'land_stale', params: { d: doc.record_print_date } });
+    }
+    const ha = parseHectares(doc.total_area_hectares);
+    if (ha === null) {
+      if (!op.includes('total_area_hectares')) errors.push({ key: 'land_area_unreadable', params: {} });
+    } else if (ha >= LAND_AREA_MAX_HECTARES) {
+      errors.push({ key: 'land_too_large', params: { n: ha.toFixed(2) } });
+    }
+    const s = doc.survey_number;
+    if ((s == null || s === 'NULL' || String(s).trim() === '') && !op.includes('survey_number')) {
+      errors.push({ key: 'survey_missing', params: {} });
+    }
+    const idName = profile.identity ? nm(matchName(profile.identity, 'full_name')) : '';
+    if (idName && owners.length && !owners.some((o) => namesMatch(idName, o))) {
+      errors.push({ key: 'name_mismatch', params: { a: profile.identity.full_name || idName, b: (doc.owner_names || [])[0] || owners[0] } });
+    }
+  }
+
+  return { ok: errors.length === 0, errors, notices };
 }

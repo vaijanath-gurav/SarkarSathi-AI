@@ -102,6 +102,8 @@ round-tripping) is not working by **hour 12**, fall back to a web upload page. L
 are channel-agnostic; only `src/whatsapp.js` and the transport half of `src/server.js`
 would be discarded. Do not let the channel sink the demo.
 
+**Status 2026-11-14:** the WhatsApp transport was never run against Meta; the hour-12 fallback was taken. The primary surface is now the Chrome extension (BUILD_PLAN_EXTENSION.md). WhatsApp code remains as a fallback.
+
 ### ADR-6: EWS certificate as the target form
 
 **Decided:** EWS (Economically Weaker Section) certificate.
@@ -118,6 +120,8 @@ source.
 
 **Revisit if:** the team has a form they actually want. Only `src/rulebook.js` and the PDF
 field list change; extraction and transport are unaffected.
+
+**Status 2026-11-14:** the target is now the real Aaple Sarkar 'EWS 10% Self-Declaration' form, curated in `forms/mahaonline-ews.json` from pages the team saved.
 
 ### ADR-8: Script handling — transliteration for matching ONLY
 
@@ -248,7 +252,7 @@ before being written, while typed ones apply directly. One extra round trip. Not
 
 ### ADR-7: Language scope — DECIDED: English, Hindi, Marathi
 
-**Decided 2026-11-13:** three languages. `src/i18n/{en,hi,mr}.json`, 35 keys each,
+**Decided 2026-11-13:** three languages. `src/i18n/{en,hi,mr}.json`, 84 keys each (2026-11-14),
 enforced identical by `src/i18n.test.js`.
 
 **Stop at three.** Not because more is hard — a new language is one JSON file — but
@@ -264,7 +268,7 @@ followed. Hindi — with far greater reach — was never considered until the te
 Recorded because it shows how an unstated choice becomes a fact nobody decided.
 
 **Adding a fourth language (if someone can verify it):**
-1. Copy `en.json` → `xx.json`, translate all 35 values
+1. Copy `en.json` → `xx.json`, translate all 84 values
 2. Import and register it in `src/i18n/index.js`
 3. Replace the button picker in `sendWhatsAppLanguagePicker` with an interactive list
 4. Add the language code to `SUPPORTED` in `src/stt.js`
@@ -277,10 +281,10 @@ Recorded because it shows how an unstated choice becomes a fact nobody decided.
 - Language scope and document choice are **coupled**. The 7/12 is Maharashtra/Gujarat; the
   equivalent is the Khasra/Khatauni in UP and MP, the Jamabandi in Punjab, Haryana and
   Rajasthan. Dropping Marathi means changing the demo land record to stay coherent.
-- The real limit is **verification, not engineering**. A new language is 19 strings and
+- The real limit is **verification, not engineering**. A new language is one JSON file (84 strings as of 2026-11-14) and
   ~20 minutes. But a garbled string shown to a judge who speaks that language is worse
   than plain English. **Ship only languages a team member can read and check.**
-- Adding Hindi: copy `mr.json` → `hi.json`, translate 19 strings, one line in
+- Adding Hindi: copy `mr.json` → `hi.json`, translate one JSON file (84 strings as of 2026-11-14), one line in
   `src/i18n/index.js`, one button in `sendLanguagePicker`. No other code changes.
 
 **Recommendation if the team does not respond:** English + Hindi + Marathi, and stop at
@@ -517,8 +521,7 @@ deduplication one photo is processed three times.
 ### 6.3 Language
 
 First contact sends a WhatsApp interactive button list: **English / मराठी**. Store the
-choice. If Whisper later detects a different language on a voice note, it overrides the
-stored value and the bot confirms the switch in the new language.
+choice. The user's chosen language (WhatsApp buttons; in the extension, the language picker in each pop-up) is stored and passed to Whisper on every request; detection never overrides it (see ADR-10).
 
 ---
 

@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
   "name": "GovTech Form Assistant",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Validates documents and fills government forms from verified records. Never submits.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "offscreen"],
   "host_permissions": ["http://localhost:3000/*", "<all_urls>"],
   "background": { "service_worker": "background.js" },
-  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }],
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["pick.js", "content.js"], "run_at": "document_idle" }],
   "commands": {
-    "open-panel": {
-      "suggested_key": { "default": "Ctrl+Shift+F" },
-      "description": "Open the form assistant"
-    }
+    "fill-form": { "suggested_key": { "default": "Ctrl+Shift+F" }, "description": "Fill the form from the client's documents" },
+    "voice-chat": { "suggested_key": { "default": "Alt+Shift+V" }, "description": "Speak or type into the clicked field" },
+    "change-format": { "suggested_key": { "default": "Alt+Shift+C" }, "description": "Change a file's format" },
+    "compress": { "suggested_key": { "default": "Alt+Shift+Z" }, "description": "Compress a file to a size limit" },
+    "pick-client": { "description": "Choose the client" }
   }
 }

@@ -1,0 +1,39 @@
+{
+  "name": "EWS 10% Self-Declaration (Aaple Sarkar / MahaOnline)",
+  "urlPattern": ["/EWSSelftDeclaration/SelfDeclarationApplication", "/portal-ews.html"],
+  "keywordFallback": false,
+  "operatorPaths": { "#txtgatno": "land.survey_number" },
+  "areaFields": { "area": "#txtland_Area", "unit": "#ddlland_unit_Value" },
+  "fields": {
+    "#txt_relation_nameofBeneficaryEn": "identity.full_name_latin",
+    "#txt_relation_nameofBeneficaryMar": "identity.full_name|devanagari",
+    "#txt_RelationDOB": "identity.date_of_birth|dmy",
+    "#Address_ApplicantAddress": "identity.address",
+    "#Address_ApplicantPincode": "identity.pin_code",
+    "#txtlandHolder_Name": "land.owner_names_latin.0",
+    "#txtLandHolder_nameLL": "land.owner_names.0"
+  },
+  "selectChains": [
+    [{ "id": "ddl_RelationGender_Value", "path": "identity.gender", "mode": "gender" }],
+    [{ "id": "Address_DistrictCode", "path": "identity.address", "mode": "within" }],
+    [
+      { "id": "ddlland_dist_Value", "path": "land.taluka_and_district", "mode": "within" },
+      { "id": "ddlland_subdist_Value", "path": "land.taluka_and_district", "mode": "within" },
+      { "id": "ddlland_vill_Value", "path": "land.village_name", "mode": "within" }
+    ]
+  ],
+  "operator": [
+    "#txtgatno", "#txtland_Area", "#ddlland_unit_Value",
+    "#txt_IncomeFromSalary", "#txt_IncomeFromBusiness", "#txt_IncomeFromAgriCulture",
+    "#txt_IncomeFromInvestment", "#txt_IncomeFromOthers"
+  ],
+  "verify": ["#txt_relation_nameofBeneficaryMar", "#txtlandHolder_Name"],
+  "verifyUnless": { "#txt_relation_nameofBeneficaryEn": "identity.full_name_latin_printed" },
+  "hints": {
+    "#txt_IncomeFromSalary": "income.certified_annual_income",
+    "#txt_IncomeFromBusiness": "income.certified_annual_income",
+    "#txt_IncomeFromAgriCulture": "income.certified_annual_income",
+    "#txt_IncomeFromInvestment": "income.certified_annual_income",
+    "#txt_IncomeFromOthers": "income.certified_annual_income"
+  }
+}

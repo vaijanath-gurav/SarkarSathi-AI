@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension Test Harness</title>
+<script>
+// Fake chrome.* APIs. Must run before any extension script.
+(function () {
+  const BASE = 'http://localhost:3000';
+  const store = {};
+  const csListeners = [];
+  const offscreenListeners = [];
+  let routeToOffscreen = false;
+  const log = [];
+
+  function pick(keys) {
+    const out = {};
+    if (keys == null) return Object.assign(out, store);
+    if (typeof keys === 'string') keys = [keys];
+    if (Array.isArray(keys)) { keys.forEach((k) => { if (k in store) out[k] = store[k]; }); return out; }
+    Object.keys(keys).forEach((k) => { out[k] = k in store ? store[k] : keys[k]; });
+    return out;
+  }
+  function withCb(fn, cb) {
+    const v = fn();
+    if (typeof cb === 'function') { cb(v); return undefined; }
+    return Promise.resolve(v);
+  }
+
+  async function relayApi(msg) {
+    const { method, path, body, binary } = msg;
+    const entry = { path, method: method || 'GET', status: null };
+    log.push(entry);
+    try {
+      const res = await fetch(BASE + path, {
+        method: method || 'GET',
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      entry.status = res.status;
+      if (binary) {
+        const buf = new Uint8Array(await res.arrayBuffer());
+        let s = '';
+        for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+        return { ok: res.ok, base64: btoa(s) };
+      }
+      return await res.json();
+    } catch {
+      entry.status = 'error';
+      return { ok: false, error: 'service not running' };
+    }
+  }
+
+  function callOffscreen(msg) {
+    return new Promise((resolve) => {
+      let done = false;
+      const sendResponse = (r) => { if (!done) { done = true; resolve(r); } };
+      let async_ = false;
+      for (const fn of offscreenListeners) {
+        try { if (fn(msg, {}, sendResponse) === true) async_ = true; } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+      }
+      if (!async_ && !done) resolve({ ok: false, error: 'no response from PDF worker' });
+    });
+  }
+
+  window.chrome = {
+    storage: { local: {
+      get(keys, cb) { return withCb(() => pick(keys), cb); },
+      set(obj, cb) { return withCb(() => { Object.assign(store, obj); }, cb); },
+    } },
+    runtime: {
+      getURL: (p) => '/extension/' + p,
+      onMessage: { addListener(fn) { (routeToOffscreen ? offscreenListeners : csListeners).push(fn); } },
+      sendMessage(msg, cb) {
+        let p;
+        if (msg && msg.type === 'API') p = relayApi(msg);
+        else if (msg && msg.type === 'PDF') {
+          const r = { type: 'PDF_OFFSCREEN', op: msg.op, args: msg.args };
+          log.push({ path: 'PDF:' + msg.op, method: 'PDF', status: null });
+          p = callOffscreen(r);
+        } else p = Promise.resolve(undefined);
+        if (typeof cb === 'function') { p.then(cb); return undefined; }
+        return p;
+      },
+    },
+  };
+
+  window.harness = {
+    log,
+    _routeOffscreen(v) { routeToOffscreen = !!v; },
+    feature(name) { csListeners.forEach((fn) => { try { fn({ type: 'FEATURE', feature: name }, {}, () => {}); } catch (e) { console.error(e); } }); },
+  };
+})();
+</script>
+<style>
+  #harness-banner{position:fixed;top:0;left:0;right:0;z-index:2147483000;background:#7a1f1f;color:#fff;font:13px system-ui,sans-serif;padding:6px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  #harness-banner b{margin-right:8px}
+  #harness-banner button{font:12px system-ui,sans-serif;padding:3px 10px;cursor:pointer}
+  body{padding-top:44px}
+</style>
+</head>
+<body>
+<div id="harness-banner">
+  <b>EXTENSION TEST HARNESS — not a government site</b>
+  <button onclick="harness.feature('FILL')">FILL</button>
+  <button onclick="harness.feature('VOICE')">VOICE</button>
+  <button onclick="harness.feature('FORMAT')">FORMAT</button>
+  <button onclick="harness.feature('COMPRESS')">COMPRESS</button>
+  <button onclick="harness.feature('CLIENT')">CLIENT</button>
+</div>
+<div id="form-root"></div>
+<script>
+(function () {
+  const loadScript = (src, module) => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    if (module) s.type = 'module';
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('failed to load ' + src));
+    document.body.appendChild(s);
+  });
+
+  (async () => {
+    try {
+      // 2. Load the demo form.
+      const html = await (await fetch('/public/portal-ews.html')).text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('style').forEach((st) => document.head.appendChild(st.cloneNode(true)));
+      const inlineScripts = [];
+      Array.from(doc.body.children).forEach((el) => {
+        if (el.tagName === 'SCRIPT') { inlineScripts.push(el); return; }
+        document.body.appendChild(document.importNode(el, true));
+      });
+      inlineScripts.forEach((old) => {
+        const s = document.createElement('script');
+        Array.from(old.attributes).forEach((a) => s.setAttribute(a.name, a.value));
+        s.text = old.textContent;
+        document.body.appendChild(s);
+      });
+
+      // 3. PDF engine (offscreen listeners kept separate).
+      await loadScript('/extension/vendor/pdf-lib.min.js', false);
+      window.harness._routeOffscreen(true);
+      try { await loadScript('/extension/offscreen.js', true); }
+      finally { window.harness._routeOffscreen(false); }
+
+      // 4. Real content scripts.
+      await loadScript('/extension/pick.js', false);
+      await loadScript('/extension/content.js', false);
+      console.log('[harness] ready');
+    } catch (e) {
+      console.error('[harness]', e);
+      const b = document.getElementById('harness-banner');
+      if (b) b.insertAdjacentText('beforeend', ' ERROR: ' + e.message);
+    }
+  })();
+})();
+</script>
+</body>
+</html>

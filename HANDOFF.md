@@ -5,6 +5,61 @@ Read this file first. It is the single entry point for anyone continuing this wo
 
 ---
 
+## ★ CURRENT STATE — 2026-11-14 (read this block first; everything below it is history)
+
+**Read `BUILD_PLAN_EXTENSION.md` §00 "User requirements" (R1–R8) before anything else.**
+Those are the user's own words, quoted. The previous planner read transcripts truncated at 600
+characters, missed most of them, and spent a day building the wrong UI. Every plan must be
+checked against §00. Read user messages in FULL — never truncate.
+
+### What exists now (Phase 14 + A12, built 2026-11-14, nothing committed since `16f4186`)
+
+| Feature | User req | State |
+|---|---|---|
+| One keybind per feature, small pop-up rising from the bottom that closes itself | R7 | built, **not yet tried in Chrome** |
+| Ctrl+Shift+F — validate + fill the form from the client's documents | D5 | built, not tried in Chrome |
+| Alt+Shift+V — speak or type into the clicked field; Enter confirms | R2, R4 | built, not tried in Chrome |
+| Alt+Shift+C — format change both ways: JPEG↔PNG↔WEBP, image↔PDF, text↔PDF | R3 | **PDF code verified in a browser harness** (text→PDF with Devanagari, PDF→PNG/JPEG pages, PDF→text, PDF compress 172 KB→51 KB); pop-up not tried in Chrome |
+| Alt+Shift+Z — compress image / PDF to a KB limit | R6 | as above |
+| Upload capture — file picked in a portal upload slot is identified, read, validated on the spot; never blocks the upload | R1 | built, not tried in Chrome |
+| Validation judges every document present, even with one missing (#124) | R8 | built (A12), **needs a server restart to take effect** |
+| Real Aaple Sarkar EWS form curated (`forms/mahaonline-ews.json`), dropdown chains | R5 | dropdown chain verified on `public/portal-ews.html` |
+| MASTER/ folder watched — new documents read without restart | PS "automated" | built |
+| Guessed names (not printed in that script) outlined dashed amber "check spelling" | ADR-8 | built |
+
+Tests: `npm test` → 44, 28, 16, 19, 13, 9 passed; `node src/fieldmap.test.js` → 34. All 0 failed.
+`pdfjs-dist` 4.10.38 installed (D2/D9 superseded for PDF). `.env` exists with `USE_MOCK=false`,
+`USE_MOCK_STT=false` (gitignored). `MASTER/` holds `Sample_Client` = public sample Aadhaar +
+the SAMPLE-watermarked 7/12; no income certificate (none readable is public).
+
+### Proven in a browser on 2026-11-14 (real extension code, test harness at test/harness/)
+Fill pop-up (11 filled / 8 for operator / 3 check-spelling, land chain पुणे→हवेली→वडगाव,
+read-only fields untouched); validation in Marathi incl. Aadhaar↔7/12 mismatch with a document
+missing; operator-typed Group No + Area/Unit saved and re-validated (6 acres → "2.43 hectares,
+EWS needs < 5 acres"); voice/chat pop-up typed path (Enter inserts into the clicked field);
+format text→PDF, JPEG→PNG, PDF→text; compress 668 KB → 20 KB; upload capture PNG into the
+income slot → wrong-format warning. **Not proven:** microphone (blocked in the test browser) and
+the Chrome keyboard shortcuts themselves — test in Chrome. Also built: desktop tray
+(`desktop\start-assistant.cmd`, not yet run), form onboarding tool (`tools/form-scan.js`),
+curated-forms-only filling (A13), DEMO.md. Tests: 44/28/16/19/13/9/5 + fieldmap 34.
+
+### Next steps, in order
+1. **Restart the server** (old one may still hold port 3000 — Ctrl+C it in its terminal; `EADDRINUSE` means it is still running). Start voice: `python stt/server.py` in its own terminal.
+2. **Reload the extension** on `chrome://extensions` (manifest changed). Check `chrome://extensions/shortcuts` — new keys may be unassigned if another extension holds them.
+3. Test every key on `http://localhost:3000/portal-ews.html`, then upload capture with a file input, then the real portal (never submit).
+4. **Open decision for the user:** desktop wrapper (16:09 item 1) was cut by the planner (D1) without the user's approval; user said "not cutting a single feature".
+5. Proofread ~35 Hindi/Marathi strings the planner wrote (`land_*`, `panel_*`, `pop_*`, `upload_*`, `doc_*`, `pin_invalid`, `survey_missing`, `name_unreadable`).
+6. Approved but not done: restructure `BUILD_PLAN_EXTENSION.md` so Phases 9–13 read as fixes filed under the phase they repair. Update README (still says WhatsApp-first) and BUILD_SPEC ADR-7 key counts.
+7. Commit (nothing committed since `16f4186`).
+
+### Working rules (also in memory)
+Planner never writes code; decision-free plan → Sonnet subagent → planner verifies independently.
+Never start work unannounced, but show every decision and check to the user. Retry failed
+installs in the background without asking. Every edited official-format image carries the
+SAMPLE watermark. Validation judges documents; it is never a data source for filling.
+
+---
+
 ## 1. Read these, in this order
 
 | File | What it holds |

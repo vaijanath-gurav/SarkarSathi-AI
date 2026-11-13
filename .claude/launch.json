@@ -4,8 +4,35 @@
     {
       "name": "govtech-verify",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
+      "runtimeArgs": [
+        "start"
+      ],
       "port": 3000
+    },
+    {
+      "name": "verify-3001",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "src/server.js"
+      ],
+      "env": {
+        "PORT": "3001"
+      },
+      "port": 3001
+    },
+    {
+      "name": "ext-harness",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5700",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/gurav/AppData/Local/Temp/claude/0e999f44635aac14/1620bb3f-0390-4be7-aa7b-74d032ced084/scratchpad/harness-root"
+      ],
+      "port": 5700
     }
   ]
 }

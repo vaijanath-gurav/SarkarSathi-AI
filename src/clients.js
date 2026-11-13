@@ -3,6 +3,7 @@
 // Extraction is cached beside the source file, so selecting a client is instant.
 
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { extractDocument } from './extractor.js';
 
@@ -79,6 +80,18 @@ export async function getProfile(key) {
     const dir = path.join(MASTER, folder);
     profile[docType] = await readCache(dir, key);
   }
+
+  let overrides = {};
+  try { overrides = JSON.parse(await fs.readFile(overridesFile(key), 'utf8')) || {}; } catch { overrides = {}; }
+  for (const [dotted, value] of Object.entries(overrides)) {
+    const [doc, field] = dotted.split('.');
+    if (profile[doc] && typeof profile[doc] === 'object') {
+      profile[doc] = { ...profile[doc], [field]: value };
+      if (Array.isArray(profile[doc].needs_operator)) {
+        profile[doc].needs_operator = profile[doc].needs_operator.filter((f) => f !== field);
+      }
+    }
+  }
   return profile;
 }
 
@@ -103,4 +116,50 @@ export async function warmAll() {
     }
   }
   if (done || failed) console.log(`[clients] extracted ${done}, failed ${failed}`);
+}
+
+/**
+ * Phase 14 (D3, PS "automated"): watch MASTER/ so a document dropped into a folder is read
+ * without a restart. Debounced; never two scans at once. Only image files trigger a scan,
+ * so writing a .json cache does not trigger another.
+ */
+export function watchMaster() {
+  let timer = null;
+  let running = false;
+  let again = false;
+  const scan = async () => {
+    if (running) { again = true; return; }
+    running = true;
+    try { await warmAll(); } catch (e) { console.error('[watch]', e.message); }
+    running = false;
+    if (again) { again = false; scan(); }
+  };
+  try {
+    fsSync.watch(MASTER, { recursive: true }, (_event, file) => {
+      if (!file || !IMAGE_EXT.has(path.extname(String(file)).toLowerCase())) return;
+      clearTimeout(timer);
+      timer = setTimeout(scan, 1500);
+    });
+    console.log(`[clients] watching ${MASTER}`);
+  } catch (e) {
+    console.error('[clients] watch unavailable:', e.message);
+  }
+}
+
+const OVERRIDE_PATHS = ['land.survey_number', 'land.total_area_hectares', 'land.record_print_date'];
+
+function overridesFile(key) {
+  return path.join(MASTER, `${key}.overrides.json`);
+}
+
+/** Operator-typed values for fields the model cannot read. Empty value clears the override. */
+export async function setOverride(key, dotted, value) {
+  if (!/^[\w .-]{1,80}$/.test(String(key))) throw new Error('bad client');
+  if (!OVERRIDE_PATHS.includes(dotted)) throw new Error('path not allowed');
+  value = String(value ?? '').trim().slice(0, 100);
+  let obj = {};
+  try { obj = JSON.parse(await fs.readFile(overridesFile(key), 'utf8')) || {}; } catch { obj = {}; }
+  if (value === '') delete obj[dotted]; else obj[dotted] = value;
+  await fs.mkdir(MASTER, { recursive: true });
+  await fs.writeFile(overridesFile(key), JSON.stringify(obj, null, 2), 'utf8');
 }

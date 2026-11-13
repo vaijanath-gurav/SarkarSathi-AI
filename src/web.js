@@ -10,13 +10,13 @@ import express from 'express';
 import path from 'node:path';
 
 import { extractDocument } from './extractor.js';
-import { validateEWS } from './rulebook.js';
+import { validateEWS, validateDocument } from './rulebook.js';
 import { generateEWSForm } from './pdf.js';
 import { t } from './i18n/index.js';
 import { REVIEW_FIELDS } from './review.js';
-import { listClients, getProfile, warmAll } from './clients.js';
+import { listClients, getProfile, warmAll, setOverride } from './clients.js';
 import { LANGUAGES } from './i18n/index.js';
-import { matchFields } from './fieldmap.js';
+import { matchFields, operatorRefs, selectChains, hintRefs, verifyRefs, findCurated } from './fieldmap.js';
 
 export const web = express.Router();
 
@@ -115,6 +115,10 @@ web.get('/api/strings', (req, res) => {
     'panel_incomplete', 'panel_no_service', 'panel_no_client', 'panel_filled', 'panel_record',
     'panel_stop', 'panel_insert', 'panel_format', 'panel_maxsize',
     'panel_click_field', 'panel_inserted', 'panel_choose_image', 'panel_pdf_failed', 'panel_fill_failed', 'panel_done_kb',
+    'land_operator_entry', 'panel_operator_field', 'panel_check_figure', 'panel_fill_nothing',
+    'name_unreadable', 'upload_checking', 'upload_ok', 'upload_unknown_doc', 'upload_format_bad',
+    'pop_upload', 'pop_summary', 'pop_listening', 'pop_to_text', 'pop_to_pages', 'pop_convert',
+    'pop_compress', 'pop_choose_client', 'pop_no_option', 'panel_verify_field', 'pop_not_curated',
   ];
   res.json(Object.fromEntries(keys.map((k) => [k, t(lang, k)])));
 });
@@ -135,11 +139,38 @@ web.get('/api/clients/:key/profile', async (req, res) => {
 web.get('/api/clients/:key/validate', async (req, res) => {
   const lang = LANGUAGES.includes(req.query.lang) ? req.query.lang : 'en';
   const profile = await getProfile(req.params.key);
-  const result = validateEWS(profile);
+  // A12 (#124): judge every document present, even when another is missing. validateEWS
+  // supplies completeness and the all-three checks; validateDocument adds per-document and
+  // pairwise checks. Duplicates (same key and params) are reported once.
+  const full = validateEWS(profile);
+  const seen = new Set();
+  const errors = [];
+  const notices = [];
+  const add = (list, items) => {
+    for (const e of items || []) {
+      const k = JSON.stringify([e.key, e.params]);
+      if (!seen.has(k)) { seen.add(k); list.push(e); }
+    }
+  };
+  add(errors, full.errors);
+  add(notices, full.notices);
+  for (const type of ['identity', 'income', 'land']) {
+    if (!profile[type]) continue;
+    const r = validateDocument(type, profile[type], { profile });
+    add(errors, r.errors);
+    add(notices, r.notices);
+  }
+  const result = { ...full, errors, notices };
+  // Phase 12: purpose is on no document and the portal collects it itself.
+  const missing = result.missing.filter((m) => m !== 'purpose');
   res.json({
-    ok: result.ok,
-    missing: result.missing,
+    ok: result.errors.length === 0 && missing.length === 0,
+    missing,
+    missing_message: missing.length
+      ? t(lang, 'panel_missing', { list: missing.map((m) => t(lang, `doc_${m}`)).join(', ') })
+      : null,
     errors: result.errors.map((e) => ({ key: e.key, message: t(lang, e.key, e.params) })),
+    notices: (result.notices || []).map((e) => ({ key: e.key, message: t(lang, e.key, e.params) })),
   });
 });
 
@@ -151,6 +182,12 @@ web.post('/api/clients/refresh', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+web.post('/api/clients/:key/override', async (req, res) => {
+  const { path: p, value } = req.body || {};
+  try { await setOverride(req.params.key, p, value); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ ok: false, error: e.message }); }
 });
 
 /**
@@ -165,8 +202,22 @@ web.post('/api/fill', async (req, res) => {
   }
 
   const profile = await getProfile(client);
+  // A13 (R5): curated forms only. An uncurated page is never guessed at.
+  if (!findCurated(url)) {
+    return res.json({ curated: false, values: {}, operator: [], chains: [], hints: {}, verify: [], matched: 0, total: fields.length });
+  }
   const values = matchFields({ profile, url, fields });
-  res.json({ values, matched: Object.keys(values).length, total: fields.length });
+  const curatedForm = findCurated(url);
+  res.json({
+    overrides: { fields: curatedForm.operatorPaths || {}, area: curatedForm.areaFields || null },
+    values,
+    operator: operatorRefs({ profile, url, fields }),
+    chains: selectChains({ profile, url }),
+    hints: hintRefs({ profile, url, fields }),
+    verify: verifyRefs({ profile, url, fields }),
+    matched: Object.keys(values).length,
+    total: fields.length,
+  });
 });
 
 /** Proxy to the local STT service so the extension needs only one origin. */
@@ -207,5 +258,52 @@ web.post('/api/to-pdf', async (req, res) => {
     res.send(pdf);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/** Phase 14 (R1): upload slots name their document; this reads the label. */
+const UPLOAD_WORDS = [
+  ['identity', ['aadhaar', 'aadhar', 'adhaar', 'आधार', 'identity', 'ओळख', 'पहचान']],
+  ['income', ['income', 'उत्पन्न', 'आय']],
+  ['land', ['7/12', '७/१२', 'satbara', 'सातबारा', '8a', '८अ', 'land record', 'जमीन', 'भूमि']],
+];
+function docTypeFromLabel(label) {
+  const s = String(label || '').toLowerCase();
+  for (const [type, words] of UPLOAD_WORDS) if (words.some((w) => s.includes(w))) return type;
+  return null;
+}
+
+/**
+ * Phase 14 (R1): automated pre-submission check of ONE uploaded document. Called by the
+ * extension when a file is picked in a portal upload slot. Reads it, judges it, reports.
+ * Never blocks the upload.
+ */
+web.post('/api/check-upload', async (req, res) => {
+  const { client, label, fileName, imageBase64, lang: l } = req.body || {};
+  const lang = LANGUAGES.includes(l) ? l : 'en';
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
+  const buffer = Buffer.from(String(imageBase64).replace(/^data:[^,]+,/, ''), 'base64');
+  const tr = (e) => ({ key: e.key, message: t(lang, e.key, e.params) });
+  try {
+    const { classifyDocument } = await import('./extractor.js');
+    const docType = docTypeFromLabel(label) || await classifyDocument(buffer);
+    if (!docType) {
+      return res.json({ ok: false, docType: null, docName: null,
+        errors: [tr({ key: 'upload_unknown_doc', params: {} })], notices: [], okMessage: null });
+    }
+    const doc = await extractDocument(buffer, docType);
+    const profile = client ? await getProfile(client) : {};
+    const r = validateDocument(docType, doc, { profile });
+    res.json({
+      ok: r.ok,
+      docType,
+      docName: t(lang, `doc_${docType}`),
+      errors: r.errors.map(tr),
+      notices: r.notices.map(tr),
+      okMessage: r.ok ? t(lang, 'upload_ok', { f: fileName || '' }) : null,
+    });
+  } catch (err) {
+    console.error('[check-upload]', err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });

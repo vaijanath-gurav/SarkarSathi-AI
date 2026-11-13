@@ -1,6 +1,7 @@
 {
   "name": "Income Certificate Application (Maharashtra)",
   "urlPattern": "/portal.html",
+  "verifyUnless": { "#applicantName": "identity.full_name_latin_printed" },
   "fields": {
     "#applicantName": "identity.full_name_latin",
     "#address": "identity.address",

@@ -290,6 +290,8 @@ app.listen(PORT, () => {
   console.log(`  Try: curl -X POST http://localhost:${PORT}/dev/run\n`);
 
   // D4: extract anything new in MASTER/ so client selection is instant later.
-  import('./clients.js').then((m) => m.warmAll()).catch((e) => console.error('[warm]', e.message));
+  import('./clients.js')
+    .then(async (m) => { await m.warmAll(); m.watchMaster(); })
+    .catch((e) => console.error('[warm]', e.message));
 });
 }
