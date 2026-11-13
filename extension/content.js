@@ -3,6 +3,7 @@
   if (window.__govtechPanel) return;
   window.__govtechPanel = true;
 
+  const sessionDocs = {};
   let LANG = 'en';
   let STR = {};
   const api = (method, path, body, binary) =>
@@ -639,13 +640,14 @@
     let r = { ok: false, error: T('panel_pdf_failed') };
     if (imageBase64) {
       r = await api('POST', '/api/check-upload', {
-        client: $('client').value || '',
+        session: sessionDocs,
         label: labelFor(input) + ' ' + (input.name || '') + ' ' + (input.id || ''),
         fileName: f.name,
         imageBase64,
         lang: LANG,
       });
     }
+    if (r.docType && r.doc) sessionDocs[r.docType] = r.doc;
     if (r.docName) line(r.docName, '', true);
     for (const x of r.errors || []) line(x.message, 'err');
     for (const x of r.notices || []) line(x.message, 'warn');

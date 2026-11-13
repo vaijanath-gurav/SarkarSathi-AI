@@ -48,6 +48,11 @@ the Chrome keyboard shortcuts themselves — test in Chrome. Also built: desktop
 (`desktop\start-assistant.cmd`, not yet run), form onboarding tool (`tools/form-scan.js`),
 curated-forms-only filling (A13), DEMO.md. Tests: 44/28/16/19/13/9/5 + fieldmap 34.
 
+**Desktop app — deferred (user, 2026-11-14):** the planner built `desktop/` as a tray icon
+without asking what the user expected. The user expected a **visible desktop window**. Do not
+present the tray as the desktop app; ask the user what the window must show and do before
+building anything.
+
 ### Next steps, in order
 1. **Restart the server** (old one may still hold port 3000 — Ctrl+C it in its terminal; `EADDRINUSE` means it is still running). Start voice: `python stt/server.py` in its own terminal.
 2. **Reload the extension** on `chrome://extensions` (manifest changed). Check `chrome://extensions/shortcuts` — new keys may be unassigned if another extension holds them.

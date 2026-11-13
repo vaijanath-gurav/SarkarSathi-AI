@@ -368,7 +368,7 @@ function docTypeFromLabel(label) {
  * Never blocks the upload.
  */
 web.post('/api/check-upload', async (req, res) => {
-  const { client, label, fileName, imageBase64, lang: l } = req.body || {};
+  const { session, label, fileName, imageBase64, lang: l } = req.body || {};
   const lang = LANGUAGES.includes(l) ? l : 'en';
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
   const buffer = Buffer.from(String(imageBase64).replace(/^data:[^,]+,/, ''), 'base64');
@@ -381,11 +381,17 @@ web.post('/api/check-upload', async (req, res) => {
         errors: [tr({ key: 'upload_unknown_doc', params: {} })], notices: [], okMessage: null });
     }
     const doc = await extractDocument(buffer, docType);
-    const profile = client ? await getProfile(client) : {};
+    const profile = {};
+    for (const k of ['identity', 'income', 'land']) {
+      const v = session && session[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) profile[k] = v;
+    }
+    delete profile[docType];
     const r = validateDocument(docType, doc, { profile });
     res.json({
       ok: r.ok,
       docType,
+      doc,
       docName: t(lang, `doc_${docType}`),
       errors: r.errors.map(tr),
       notices: r.notices.map(tr),
