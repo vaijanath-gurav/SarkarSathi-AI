@@ -17,9 +17,11 @@ Nothing here leaves the machine - same data-sovereignty argument as the VLM.
 
 import json
 import os
+import re
 import sys
 import tempfile
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Windows consoles default to cp1252, which cannot encode Devanagari. Without this,
@@ -112,10 +114,13 @@ class Handler(BaseHTTPRequestHandler):
         # making it guess. Auto-detect on a short Marathi clip returned "en" at 0.289
         # confidence and transliterated the speech into nonsense English.
         forced = None
+        prompt = None
         for part in query.split("&"):
             key, _, value = part.partition("=")
             if key == "language" and value:
                 forced = value
+            elif key == "prompt" and value:
+                prompt = urllib.parse.unquote_plus(value)[:400]
 
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -139,12 +144,17 @@ class Handler(BaseHTTPRequestHandler):
                 beam_size=5,              # Indic needs the search; greedy returned empty
                 vad_filter=False,         # VAD swallowed short Marathi clips entirely
                 task="transcribe",        # never "translate" - we want the spoken language
+                initial_prompt=prompt,    # expected names/field label; steers vocabulary
             )
             text = "".join(seg.text for seg in segments).strip()
             elapsed = time.time() - t0
 
+            # Mask any 12-digit ID in the log only; the response keeps the number.
+            log_text = re.sub(r'\d{4}[\s,.\-]?\d{4}[\s,.\-]?\d{4}',
+                              lambda m: 'XXXX-XXXX-' + re.sub(r'\D', '', m.group())[-4:], text)
             print(f'[stt] {info.language} ({info.language_probability:.2f}) '
-                  f'{elapsed:.1f}s: {text[:80]}', flush=True)
+                  f'{elapsed:.1f}s prompt_len={len(prompt) if prompt else 0}: {log_text[:80]}',
+                  flush=True)
 
             self._json(200, {
                 "text": text,

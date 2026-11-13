@@ -12,6 +12,11 @@ Those are the user's own words, quoted. The previous planner read transcripts tr
 characters, missed most of them, and spent a day building the wrong UI. Every plan must be
 checked against §00. Read user messages in FULL — never truncate.
 
+**R9 — what the product IS (user, 2026-11-14):** two independent features — **voice/chat form
+filling** (primary) and **automated pre-submission OCR validation** (documents checked on upload).
+OCR never existed to extract data for filling; Ctrl+Shift+F "fill from documents" is a leftover
+extra from a misunderstanding. Demo and pitch lead with voice/chat + upload validation.
+
 ### What exists now (Phase 14 + A12, built 2026-11-14, nothing committed since `16f4186`)
 
 | Feature | User req | State |

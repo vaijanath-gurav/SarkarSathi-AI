@@ -13,7 +13,7 @@ const SUPPORTED = new Set(['en', 'mr', 'hi']);
  * @param {Buffer} audioBuffer  raw OGG/Opus straight from WhatsApp - no conversion needed
  * @returns {Promise<{text:string, language:string|null, confident:boolean}>}
  */
-export async function transcribe(audioBuffer, language = null) {
+export async function transcribe(audioBuffer, language = null, prompt = null) {
   if (USE_MOCK_STT) {
     return { text: 'ok', language: language || 'mr', confident: true };
   }
@@ -22,9 +22,11 @@ export async function transcribe(audioBuffer, language = null) {
   // identified it as Tagalog at 0.33 confidence and produced Latin gibberish; the same
   // audio with language=mr transcribed correctly in 1.6s. We know the answer from the
   // language button, so never make the model guess.
-  const url = language
-    ? `${STT_URL}/transcribe?language=${encodeURIComponent(language)}`
-    : `${STT_URL}/transcribe`;
+  const qs = [];
+  if (language) qs.push(`language=${encodeURIComponent(language)}`);
+  // Optional initial_prompt (expected names / field label) to steer Whisper's vocabulary.
+  if (typeof prompt === 'string' && prompt) qs.push(`prompt=${encodeURIComponent(prompt.slice(0, 400))}`);
+  const url = `${STT_URL}/transcribe${qs.length ? `?${qs.join('&')}` : ''}`;
 
   const res = await fetch(url, {
     method: 'POST',

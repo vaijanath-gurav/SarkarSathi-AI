@@ -23,6 +23,8 @@ be checked against this section before it is written.
 | R7 | *"a keybind to invoke compression feature, keybind to change formats, keybind to voice / chat, and so on"* · *"a gemini like pop up from under the screen when one feature is invoked"* — not *"a screen blocking window that never leaves"* (2026-11-14) | **One keybind per feature.** Each opens a small pop-up rising from the bottom of the screen, does one job, and closes itself. **Supersedes the single panel and D15.** |
 | R8 | *"the fundamental idea of validation is not to auto fill by reading / parsing, its to validate the doc"* (2026-11-14), consistent with BUILD_SPEC §5.3 | Validation judges documents (would they be rejected?). It is independent of filling and never a data source for it. |
 
+| R9 | *"OCR never — nor in PS and never in plan — planned to extract info, it was a misunderstanding… left built as it cost nothing to let it exist as an additional feature, but it was never meant to exist"* · *"voice and chat is a separate feature and OCR is a separate feature"* (2026-11-14) | **The product is two independent features:** (1) **voice / chat form filling** — the primary way to fill, works with no documents and no client; (2) **automated pre-submission OCR validation** — documents checked when uploaded so the portal does not reject them. **Filling from documents (Ctrl+Shift+F) is an extra, not the product.** Never present or plan it as the core. |
+
 **D2 and D9 superseded for PDF (2026-11-14):** D9 cut PDF→text / PDF→image citing failed
 installs, but the user's standing rule (2026-11-13) was to *retry failed installs in the
 background without asking*. `pdfjs-dist` is therefore installed (retried until success) and

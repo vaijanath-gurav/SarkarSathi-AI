@@ -410,8 +410,9 @@
           rec.textContent = T('panel_record');
           const blob = new Blob(chunks, { type: mine.mimeType });
           const dataUrl = await readDataUrl(blob);
-          const r = await api('POST', '/api/stt', { audioBase64: dataUrl, lang: LANG });
-          if (r.ok && r.text) { ta.value = r.text; ta.focus(); status(''); }
+          const r = await api('POST', '/api/stt', { audioBase64: dataUrl, lang: LANG, client: $('client').value || '', field: labelFor(target) });
+          if (r.ok && r.rejected === 'not_a_name') { ta.value = ''; ta.focus(); status(T('pop_not_a_name'), 'err'); }
+          else if (r.ok && r.text) { ta.value = r.text; ta.focus(); status(''); }
           else status(T('voice_empty'), 'err');
         };
         recorder.start();

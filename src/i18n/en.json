@@ -35,6 +35,7 @@
   "pop_no_option": "No matching option in this list.",
   "panel_verify_field": "Check this spelling against the document — it may not be printed in this script.",
   "pop_not_curated": "This form is not set up in the assistant yet, so nothing was filled automatically. Fill it by voice or typing: click a field and press Alt+Shift+V.",
+  "pop_not_a_name": "Didn't catch a name — say it again, or type it.",
   "panel_missing": "Missing documents: {list}",
   "doc_identity": "Aadhaar card",
   "doc_income": "Income certificate",

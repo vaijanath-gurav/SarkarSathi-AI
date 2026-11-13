@@ -10,7 +10,7 @@ import express from 'express';
 import path from 'node:path';
 
 import { extractDocument } from './extractor.js';
-import { validateEWS, validateDocument } from './rulebook.js';
+import { validateEWS, validateDocument, toAsciiDigits } from './rulebook.js';
 import { generateEWSForm } from './pdf.js';
 import { t } from './i18n/index.js';
 import { REVIEW_FIELDS } from './review.js';
@@ -119,6 +119,7 @@ web.get('/api/strings', (req, res) => {
     'name_unreadable', 'upload_checking', 'upload_ok', 'upload_unknown_doc', 'upload_format_bad',
     'pop_upload', 'pop_summary', 'pop_listening', 'pop_to_text', 'pop_to_pages', 'pop_convert',
     'pop_compress', 'pop_choose_client', 'pop_no_option', 'panel_verify_field', 'pop_not_curated',
+    'pop_not_a_name',
   ];
   res.json(Object.fromEntries(keys.map((k) => [k, t(lang, k)])));
 });
@@ -221,15 +222,76 @@ web.post('/api/fill', async (req, res) => {
 });
 
 /** Proxy to the local STT service so the extension needs only one origin. */
+const STT_EXAMPLES = {
+  en: 'Ramesh Shinde, Sunita Pawar, Rahul Deshmukh, Pooja Kulkarni, Vijay Jadhav, Anjali Gaikwad',
+  mr: 'रमेश शिंदे, सुनीता पवार, राहुल देशमुख, पूजा कुलकर्णी, विजय जाधव, अंजली गायकवाड',
+  hi: 'रमेश शर्मा, सुनीता वर्मा, राहुल सिंह, पूजा गुप्ता, विजय यादव, अंजली मिश्रा',
+};
+const STT_LEAD = {
+  en: "An Indian person's full name, for example:",
+  mr: 'व्यक्तीचे पूर्ण नाव, उदाहरणार्थ:',
+  hi: 'व्यक्ति का पूरा नाम, उदाहरण:',
+};
+/** ADR-8: the output script belongs to the form, so the field label picks the language. */
+export function fieldLanguage(field) {
+  const s = String(field || '');
+  if (/english|इंग्रजी|अंग्रेज़ी|अंग्रेजी/i.test(s)) return 'en';
+  if (/marathi|मराठी/i.test(s)) return 'mr';
+  if (/hindi|हिंदी|हिन्दी/i.test(s)) return 'hi';
+  return null;
+}
+
+export function buildSttPrompt(lang, field) {
+  const l = STT_EXAMPLES[lang] ? lang : 'en';
+  const isName = /name|नाव|नाम/i.test(field || '');
+  const parts = [];
+  if (isName) {
+    parts.push(`${STT_LEAD[l]} ${STT_EXAMPLES[l]}.`);
+  } else if (field) {
+    parts.push(`${field}:`);
+  }
+  return parts.join(' ').slice(0, 400) || null;
+}
+
+/**
+ * Voice post-processing by field (government form context).
+ * - A transcript that is only digits and separators becomes plain digits:
+ *   "9768-7312-1335" -> "976873121335" (Aadhaar, mobile, PIN, amounts).
+ * - On a name field, a transcript that looks like a sentence is rejected, never offered:
+ *   Whisper invents sentences from quiet or clipped audio ("so why are we…").
+ */
+const STT_FILLER = /\b(so|why|are|we|the|is|this|it|to|and|you|thank|thanks|sorry|bye|well|now|going|end|here|time|its|okay|yes|no|what|how)\b/i;
+export function postProcessTranscript(text, field) {
+  const t = String(text || '').trim();
+  if (!t) return { text: '' };
+  if (/^[\d\s,.\-–—०-९]+$/.test(t)) {
+    const digits = toAsciiDigits(t).replace(/\D/g, '');
+    if (digits) return { text: digits };
+  }
+  if (/name|नाव|नाम/i.test(String(field || ''))) {
+    const cleaned = t.replace(/[.!?।॥,;:]+$/u, '').trim();
+    if (cleaned.split(/\s+/).length > 4 || STT_FILLER.test(cleaned)) return { text: '', rejected: 'not_a_name' };
+    return { text: cleaned };
+  }
+  return { text: t };
+}
+
 web.post('/api/stt', async (req, res) => {
-  const { audioBase64, lang } = req.body || {};
+  const { audioBase64, lang, field } = req.body || {};
   if (!audioBase64) return res.status(400).json({ error: 'audioBase64 is required' });
 
   const buffer = Buffer.from(audioBase64.replace(/^data:[^,]+,/, ''), 'base64');
+
+  // Voice is independent of documents (R9): only the field label steers Whisper.
+  const whisperLang = fieldLanguage(field) || lang || null;
+  const sttLang = ['en', 'hi', 'mr'].includes(whisperLang) ? whisperLang : 'en';
+  const prompt = buildSttPrompt(sttLang, field);
+
   try {
     const { transcribe } = await import('./stt.js');
-    const result = await transcribe(buffer, lang || null);
-    res.json({ ok: true, ...result });
+    const result = await transcribe(buffer, whisperLang, prompt);
+    const post = postProcessTranscript(result.text, field);
+    res.json({ ok: true, ...result, text: post.text, ...(post.rejected ? { rejected: post.rejected } : {}), language: whisperLang });
   } catch (err) {
     console.error('[web/stt]', err);
     res.status(500).json({ ok: false, error: err.message });
