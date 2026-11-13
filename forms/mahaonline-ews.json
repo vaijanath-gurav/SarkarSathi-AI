@@ -2,6 +2,8 @@
   "name": "EWS 10% Self-Declaration (Aaple Sarkar / MahaOnline)",
   "urlPattern": ["/EWSSelftDeclaration/SelfDeclarationApplication", "/portal-ews.html"],
   "keywordFallback": false,
+  "nameFields": ["#txt_relation_nameofBeneficaryEn", "#txt_relation_nameofBeneficaryMar", "#BasicInformation_ApplicantName"],
+  "landHolderFields": ["#txtlandHolder_Name", "#txtLandHolder_nameLL"],
   "operatorPaths": { "#txtgatno": "land.survey_number" },
   "areaFields": { "area": "#txtland_Area", "unit": "#ddlland_unit_Value" },
   "fields": {

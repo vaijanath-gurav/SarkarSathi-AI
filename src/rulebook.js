@@ -287,3 +287,80 @@ export function validateDocument(docType, doc, { profile = {}, now = new Date() 
 
   return { ok: errors.length === 0, errors, notices };
 }
+
+/**
+ * User requirement 2026-11-14: compare an uploaded document's name with the NAME box on the
+ * form being filled. Documents are never compared with each other here.
+ * form = { name, landHolder } (strings typed on the form; either may be empty).
+ * Script: a Devanagari form name is compared with the document's printed name; otherwise with
+ * the Latin name. 7/12 owners are compared with landHolder if filled, else with name.
+ */
+const devaScript = (s) => /[ऀ-ॿ]/.test(String(s || ''));
+
+/** Candidate names printed on a document, in the script matching `script` (the form name). */
+export function docNames(docType, doc, script) {
+  if (!doc) return [];
+  const deva = devaScript(script);
+  const one = (field) => (deva ? doc[field] : (doc[`${field}_latin`] || doc[field])) || '';
+  const many = (field) => {
+    const l = deva ? doc[field] : (doc[`${field}_latin`] || doc[field]);
+    return Array.isArray(l) ? l : [];
+  };
+  let names = [];
+  if (docType === 'identity') names = [one('full_name')];
+  else if (docType === 'income') names = [one('applicant_name'), ...many('other_names')];
+  else if (docType === 'land') names = many('owner_names');
+  return names.filter((x) => x && x !== 'NULL');
+}
+
+export function checkAgainstForm(docType, doc, form = {}) {
+  const errors = [];
+  if (!doc) return errors;
+  const formName = String(form.name || '').trim();
+  const target = docType === 'land' ? (String(form.landHolder || '').trim() || formName) : formName;
+  if (!target) return errors;
+  const names = docNames(docType, doc, target);
+  if (names.length && !names.some((n) => namesMatch(n, target))) {
+    errors.push({ key: 'form_name_mismatch', params: { d: `doc_${docType}`, a: names[0], b: target } });
+  }
+  return errors;
+}
+
+/**
+ * Batch name check across all uploads on one form. uploads = [{ key, docType, doc }].
+ * If several documents all disagree with the form name yet agree with each other, the form's
+ * NAME box is the likely culprit: one notice, documents not blamed. Otherwise each disagreeing
+ * document is flagged.
+ */
+export function resolveNames(uploads = [], form = {}) {
+  const formName = String(form.name || '').trim();
+  const landHolder = String(form.landHolder || '').trim();
+  const rows = [];
+  for (const u of uploads) {
+    const usesHolder = u.docType === 'land' && landHolder;
+    const target = usesHolder ? landHolder : formName;
+    if (!target) continue;
+    const names = docNames(u.docType, u.doc, target);
+    if (!names.length) continue; // nothing readable to compare
+    const matches = names.some((n) => namesMatch(n, target));
+    rows.push({ u, names, target, matches, usesHolder });
+  }
+  const againstName = rows.filter((r) => !r.usesHolder);
+  const mismatched = againstName.filter((r) => !r.matches);
+  const matched = againstName.filter((r) => r.matches);
+  if (formName && mismatched.length >= 2 && matched.length === 0) {
+    const first = mismatched[0];
+    const shared = mismatched.every((r) => r === first || first.names.some((a) => r.names.some((b) => namesMatch(a, b))));
+    if (shared) {
+      return {
+        perDoc: {},
+        notices: [{ key: 'form_name_suspect', params: { docs: mismatched.map((r) => `doc_${r.u.docType}`), a: first.names[0], b: formName } }],
+      };
+    }
+  }
+  const perDoc = {};
+  for (const r of rows) {
+    if (!r.matches) perDoc[r.u.key] = [{ key: 'form_name_mismatch', params: { d: `doc_${r.u.docType}`, a: r.names[0], b: r.target } }];
+  }
+  return { perDoc, notices: [] };
+}

@@ -36,6 +36,8 @@
   "panel_verify_field": "Check this spelling against the document — it may not be printed in this script.",
   "pop_not_curated": "This form is not set up in the assistant yet, so nothing was filled automatically. Fill it by voice or typing: click a field and press Alt+Shift+V.",
   "pop_not_a_name": "Didn't catch a name — say it again, or type it.",
+  "form_name_mismatch": "Problem found: the name on this {d} ({a}) does not match the name on the form ({b}). Check the document or the name typed on the form.",
+  "form_name_suspect": "The {docs} all say {a}, but the form says {b} — the name on the form is probably wrong. Correct the name on the form.",
   "panel_missing": "Missing documents: {list}",
   "doc_identity": "Aadhaar card",
   "doc_income": "Income certificate",

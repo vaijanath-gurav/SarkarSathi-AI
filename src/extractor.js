@@ -43,6 +43,8 @@ export const SCHEMAS = {
   "document_type": "INCOME_CERTIFICATE",
   "applicant_name": "String - The name EXACTLY as printed, in the script printed on the document",
   "applicant_name_latin": "String - The same name in Roman script. If an English version is printed, copy it EXACTLY. Otherwise transliterate.",
+  "other_names": ["String - every OTHER person named on the certificate (family members, ward, 'parents of …'), exactly as printed"],
+  "other_names_latin": ["String - the same names in Roman script, same order"],
   "certified_annual_income": "String - The total annual income amount in numbers (e.g., 120000)",
   "issuing_authority": "String - The designation of the officer who issued the certificate",
   "issue_date": "String - The exact date the certificate was issued, formatted as YYYY-MM-DD",

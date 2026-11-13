@@ -2,7 +2,7 @@
 // Works right now with zero AI, zero WhatsApp. Dev 4 lives in this file.
 
 import fs from 'node:fs';
-import { validateEWS, namesMatch, monthsSince, parseHectares, toAsciiDigits, validateDocument } from './rulebook.js';
+import { validateEWS, namesMatch, monthsSince, parseHectares, toAsciiDigits, validateDocument, checkAgainstForm, resolveNames } from './rulebook.js';
 
 const load = (f) => JSON.parse(fs.readFileSync(`fixtures/${f}.json`, 'utf8'));
 const NOW = new Date('2026-11-13');
@@ -140,6 +140,38 @@ check('operator-typed 7/12 numbers raise a notice, not an error', (() => {
   const r = vd('land', { ...load('land'), survey_number: null, total_area_hectares: null, record_print_date: null,
     needs_operator: ['survey_number', 'total_area_hectares', 'record_print_date'] });
   return r.ok === true && r.notices.some((n) => n.key === 'land_operator_entry');
+})());
+
+console.log('\nUpload vs NAME box on the same form');
+const kale = { applicant_name: 'Suresh Kale', applicant_name_latin: 'Suresh Kale' };
+check('income vs matching form name passes', checkAgainstForm('income', load('income'), { name: 'Ramesh Shankar Patil' }).length === 0);
+check('income of another person vs form name caught', (() => { const e = checkAgainstForm('income', { ...load('income'), ...kale }, { name: 'Ramesh Shankar Patil' }); return e.length === 1 && e[0].key === 'form_name_mismatch'; })());
+check('Aadhaar vs different form name caught', checkAgainstForm('identity', load('identity'), { name: 'Suresh Kale' }).some((e) => e.key === 'form_name_mismatch'));
+check('7/12 vs form name passes (Paatil ~ Patil)', checkAgainstForm('land', load('land'), { name: 'Ramesh Shankar Patil' }).length === 0);
+check('7/12 checked against the land holder box', checkAgainstForm('land', load('land'), { name: 'Ramesh Shankar Patil', landHolder: 'Suresh Kale' }).some((e) => e.key === 'form_name_mismatch'));
+check('Devanagari form name compared with printed Devanagari name', checkAgainstForm('identity', load('identity'), { name: 'रमेश शंकर पाटील' }).length === 0);
+check('empty form raises nothing', ['identity', 'income', 'land'].every((t) => checkAgainstForm(t, load(t), {}).length === 0));
+
+check('income naming several people matches ANY of them', checkAgainstForm('income', { applicant_name: 'Jaywant Janardhan Kasabale', applicant_name_latin: 'Jaywant Janardhan Kasabale', other_names_latin: ['Jitesh Jaywant Kasabale'] }, { name: 'Jitesh Jaywant Kasabale' }).length === 0);
+check('wrong form name: income + 7/12 agree with each other -> one notice, documents not blamed', (() => {
+  const r = resolveNames([{ key: 'a', docType: 'income', doc: load('income') }, { key: 'b', docType: 'land', doc: load('land') }], { name: 'Rmesh Pateel' });
+  return r.notices.length === 1 && r.notices[0].key === 'form_name_suspect' && Object.keys(r.perDoc).length === 0;
+})());
+check('odd document out is blamed, not the form', (() => {
+  const r = resolveNames([{ key: 'a', docType: 'identity', doc: load('identity') }, { key: 'b', docType: 'income', doc: { ...load('income'), ...kale } }], { name: 'Ramesh Shankar Patil' });
+  return Object.keys(r.perDoc).join() === 'b' && r.notices.length === 0;
+})());
+check('single mismatching document is blamed', (() => {
+  const r = resolveNames([{ key: 'b', docType: 'income', doc: { ...load('income'), ...kale } }], { name: 'Ramesh Shankar Patil' });
+  return Object.keys(r.perDoc).join() === 'b' && r.notices.length === 0;
+})());
+check('7/12 compared with the land holder box', (() => {
+  const r = resolveNames([{ key: 'c', docType: 'land', doc: load('land') }], { name: 'Suresh Kale', landHolder: 'Ramesh Shankar Patil' });
+  return !('c' in r.perDoc) && r.notices.length === 0;
+})());
+check('empty form: resolveNames raises nothing', (() => {
+  const r = resolveNames([{ key: 'a', docType: 'identity', doc: load('identity') }, { key: 'b', docType: 'land', doc: load('land') }], {});
+  return Object.keys(r.perDoc).length === 0 && r.notices.length === 0;
 })());
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -10,7 +10,7 @@ import express from 'express';
 import path from 'node:path';
 
 import { extractDocument } from './extractor.js';
-import { validateEWS, validateDocument, toAsciiDigits } from './rulebook.js';
+import { validateEWS, validateDocument, toAsciiDigits, resolveNames } from './rulebook.js';
 import { generateEWSForm } from './pdf.js';
 import { t } from './i18n/index.js';
 import { REVIEW_FIELDS } from './review.js';
@@ -368,7 +368,7 @@ function docTypeFromLabel(label) {
  * Never blocks the upload.
  */
 web.post('/api/check-upload', async (req, res) => {
-  const { session, label, fileName, imageBase64, lang: l } = req.body || {};
+  const { form, label, fileName, imageBase64, lang: l } = req.body || {};
   const lang = LANGUAGES.includes(l) ? l : 'en';
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
   const buffer = Buffer.from(String(imageBase64).replace(/^data:[^,]+,/, ''), 'base64');
@@ -381,24 +381,39 @@ web.post('/api/check-upload', async (req, res) => {
         errors: [tr({ key: 'upload_unknown_doc', params: {} })], notices: [], okMessage: null });
     }
     const doc = await extractDocument(buffer, docType);
-    const profile = {};
-    for (const k of ['identity', 'income', 'land']) {
-      const v = session && session[k];
-      if (v && typeof v === 'object' && !Array.isArray(v)) profile[k] = v;
-    }
-    delete profile[docType];
-    const r = validateDocument(docType, doc, { profile });
+    const r = validateDocument(docType, doc, { profile: {} });
+    const errors = r.errors.map(tr);
     res.json({
-      ok: r.ok,
+      ok: errors.length === 0,
       docType,
       doc,
       docName: t(lang, `doc_${docType}`),
-      errors: r.errors.map(tr),
+      errors,
       notices: r.notices.map(tr),
-      okMessage: r.ok ? t(lang, 'upload_ok', { f: fileName || '' }) : null,
+      okMessage: errors.length === 0 ? t(lang, 'upload_ok', { f: fileName || '' }) : null,
     });
   } catch (err) {
     console.error('[check-upload]', err);
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+/** Batch name check: all uploads against the NAME / land-holder boxes (find the odd one out). */
+web.post('/api/check-names', (req, res) => {
+  const { uploads, form, lang: l } = req.body || {};
+  const lang = LANGUAGES.includes(l) ? l : 'en';
+  if (!Array.isArray(uploads)) return res.status(400).json({ error: 'uploads is required' });
+  const r = resolveNames(uploads, form || {});
+  const msg = (e) => t(lang, e.key, e.key === 'form_name_suspect'
+    ? { ...e.params, docs: e.params.docs.map((d) => t(lang, d)).join(', ') }
+    : { ...e.params, d: t(lang, e.params.d) });
+  const perDoc = {};
+  for (const [k, list] of Object.entries(r.perDoc)) perDoc[k] = list.map(msg);
+  res.json({ perDoc, notices: r.notices.map(msg) });
+});
+
+/** Which inputs on a curated form hold the applicant name / land holder name. */
+web.get('/api/form-fields', (req, res) => {
+  const curated = findCurated(String(req.query.url || ''));
+  res.json({ nameFields: curated?.nameFields || [], landHolderFields: curated?.landHolderFields || [] });
 });

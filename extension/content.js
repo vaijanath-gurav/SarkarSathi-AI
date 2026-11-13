@@ -3,7 +3,9 @@
   if (window.__govtechPanel) return;
   window.__govtechPanel = true;
 
-  const sessionDocs = {};
+  const uploads = {};
+  let formFields = null;
+  let nameListenerOn = false;
   let LANG = 'en';
   let STR = {};
   const api = (method, path, body, binary) =>
@@ -614,11 +616,72 @@
     return parts.some((p) => (p.startsWith('.') ? name.endsWith(p) : p.endsWith('/*') ? type.startsWith(p.slice(0, -1)) : type === p));
   };
 
+  const NAME_LABEL = /name|नाव|नाम/i;
+  const NOT_APPLICANT = /father|mother|husband|relative|land|वडील|आई|पती|जमीन|पिता|माता/i;
+  async function loadFormFields() {
+    if (formFields) return;
+    const r = await api('GET', '/api/form-fields?url=' + encodeURIComponent(location.href));
+    formFields = { nameFields: r.nameFields || [], landHolderFields: r.landHolderFields || [] };
+  }
+  const firstValue = (sels) => {
+    for (const sel of sels) {
+      let el = null;
+      try { el = document.querySelector(sel); } catch (_) { /* bad selector */ }
+      if (el && el.value && el.value.trim()) return el.value.trim();
+    }
+    return '';
+  };
+  const matchesAny = (el, sels) => sels.some((sel) => { try { return el.matches(sel); } catch (_) { return false; } });
+  const isFallbackName = (el) => {
+    const l = labelFor(el);
+    return NAME_LABEL.test(l) && !NOT_APPLICANT.test(l);
+  };
+  function readForm() {
+    const ff = formFields || { nameFields: [], landHolderFields: [] };
+    let name = firstValue(ff.nameFields);
+    if (!name) {
+      for (const el of document.querySelectorAll('input')) {
+        if (el.type === 'file' || el.type === 'hidden' || !el.value || !el.value.trim()) continue;
+        if (isFallbackName(el)) { name = el.value.trim(); break; }
+      }
+    }
+    return { name, landHolder: firstValue(ff.landHolderFields) };
+  }
+  /** Batch-check every stored upload against the form's name boxes; render per-document lines. Returns true if any problem line shown. */
+  async function checkNames() {
+    const list = Object.entries(uploads).map(([key, u]) => ({ key, docType: u.docType, doc: u.doc }));
+    if (!list.length) return false;
+    const r = await api('POST', '/api/check-names', { uploads: list, form: readForm(), lang: LANG });
+    if (!r || r.error) return false;
+    let problems = false;
+    for (const [key, u] of Object.entries(uploads)) {
+      if (u.docName) line(u.docName, '', true);
+      const msgs = (r.perDoc && r.perDoc[key]) || [];
+      if (msgs.length) { problems = true; for (const m of msgs) line(m, 'err'); }
+      else if (u.valid !== false) line(T('upload_ok').replace('{f}', u.fileName), 'okc');
+    }
+    for (const m of r.notices || []) { problems = true; line(m, 'warn'); }
+    return problems;
+  }
+  function attachNameListener() {
+    if (nameListenerOn) return;
+    nameListenerOn = true;
+    document.addEventListener('change', async (e) => {
+      const el = e.target;
+      if (!el || !el.matches || !el.matches('input') || el.type === 'file') return;
+      const ff = formFields || { nameFields: [], landHolderFields: [] };
+      if (!(matchesAny(el, ff.nameFields) || matchesAny(el, ff.landHolderFields) || isFallbackName(el))) return;
+      openPopup('UPLOAD', 'pop_upload');
+      if (!(await checkNames())) autoClose(8000);
+    }, true);
+  }
+
   document.addEventListener('change', async (e) => {
     const input = e.target;
     if (!input || !input.matches || !input.matches('input[type=file]') || !input.files || !input.files.length) return;
     const f = input.files[0];
     await ensureReady();
+    await loadFormFields();
     openPopup('UPLOAD', 'pop_upload');
     status(T('upload_checking').replace('{f}', f.name), 'warn');
 
@@ -640,18 +703,21 @@
     let r = { ok: false, error: T('panel_pdf_failed') };
     if (imageBase64) {
       r = await api('POST', '/api/check-upload', {
-        session: sessionDocs,
+        form: readForm(),
         label: labelFor(input) + ' ' + (input.name || '') + ' ' + (input.id || ''),
         fileName: f.name,
         imageBase64,
         lang: LANG,
       });
     }
-    if (r.docType && r.doc) sessionDocs[r.docType] = r.doc;
+    if (r.docType && r.doc) {
+      uploads[input.id || input.name || 'upload'] = { docType: r.docType, doc: r.doc, fileName: f.name, docName: r.docName, valid: !!r.ok };
+      attachNameListener();
+    }
     if (r.docName) line(r.docName, '', true);
     for (const x of r.errors || []) line(x.message, 'err');
     for (const x of r.notices || []) line(x.message, 'warn');
-    if (r.ok && r.okMessage) line(r.okMessage, 'okc');
+    const nameProblems = r.docType && r.doc ? await checkNames() : false;
 
     const brow = document.createElement('div');
     const cv = document.createElement('button');
@@ -665,6 +731,6 @@
 
     if (r.error) status(r.error, 'err');
     else status('');
-    if (r.ok && !formatBad) autoClose(8000);
+    if (r.ok && !formatBad && !nameProblems) autoClose(8000);
   }, true);
 })();
