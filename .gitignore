@@ -4,3 +4,4 @@ out/
 *.log
 MASTER/
 handoff/transcript/
+CLAUDE.local.md
