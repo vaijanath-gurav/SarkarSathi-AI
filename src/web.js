@@ -241,11 +241,32 @@ export function fieldLanguage(field) {
   return null;
 }
 
+const NUMERIC_FIELD = /aadha?a?r|आधार|mobile|phone|मोबाईल|मोबाइल|pin|पिन|number|no|क्रमांक|नंबर|income|उत्पन्न|आय|area|क्षेत्र|age|वय|उम्र/i;
+const NUM_WORDS = {
+  zero: 0, oh: 0, o: 0, one: 1, two: 2, to: 2, too: 2, three: 3, four: 4, for: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  'शून्य': 0, 'एक': 1, 'दोन': 2, 'तीन': 3, 'चार': 4, 'पाच': 5, 'सहा': 6, 'सात': 7, 'आठ': 8, 'नऊ': 9,
+  'दो': 2, 'पांच': 5, 'पाँच': 5, 'छह': 6, 'छः': 6, 'नौ': 9,
+};
+const NUM_MULT = { double: 2, 'डबल': 2, triple: 3, 'ट्रिपल': 3 };
+/** Spoken digits ("nine seven six") -> digit string; filler words are ignored. */
+export function spokenDigits(text) {
+  const tokens = String(text || '').toLowerCase().split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+  let digits = '', numberTokens = 0, mult = 1;
+  for (const tok of tokens) {
+    if (/^[0-9०-९]+$/.test(tok)) { digits += toAsciiDigits(tok); numberTokens++; mult = 1; }
+    else if (Object.hasOwn(NUM_WORDS, tok)) { digits += String(NUM_WORDS[tok]).repeat(mult); numberTokens++; mult = 1; }
+    else if (Object.hasOwn(NUM_MULT, tok)) { mult = NUM_MULT[tok]; }
+  }
+  return { digits, numberTokens, totalTokens: tokens.length };
+}
+
 export function buildSttPrompt(lang, field) {
   const l = STT_EXAMPLES[lang] ? lang : 'en';
   const isName = /name|नाव|नाम/i.test(field || '');
   const parts = [];
-  if (isName) {
+  if (!isName && NUMERIC_FIELD.test(field || '')) {
+    parts.push(`${field}: 4821 7730 9156`);
+  } else if (isName) {
     parts.push(`${STT_LEAD[l]} ${STT_EXAMPLES[l]}.`);
   } else if (field) {
     parts.push(`${field}:`);
@@ -268,7 +289,13 @@ export function postProcessTranscript(text, field) {
     const digits = toAsciiDigits(t).replace(/\D/g, '');
     if (digits) return { text: digits };
   }
-  if (/name|नाव|नाम/i.test(String(field || ''))) {
+  const isNameField = /name|नाव|नाम/i.test(String(field || ''));
+  const sp = spokenDigits(t);
+  if (sp.digits && ((!isNameField && NUMERIC_FIELD.test(String(field || ''))) ||
+      (sp.numberTokens / sp.totalTokens >= 0.6 && sp.numberTokens >= 3))) {
+    return { text: sp.digits };
+  }
+  if (isNameField) {
     const cleaned = t.replace(/[.!?।॥,;:]+$/u, '').trim();
     if (cleaned.split(/\s+/).length > 4 || STT_FILLER.test(cleaned)) return { text: '', rejected: 'not_a_name' };
     return { text: cleaned };

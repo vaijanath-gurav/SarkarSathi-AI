@@ -285,8 +285,10 @@
         if (broken) { el.style.outline = '3px solid #e69500'; continue; }
         const value = window.__govtechPick.pickOption(
           [...el.options].map((o) => ({ value: o.value, text: o.text })), chain[i]);
+        const fuzzy = window.__govtechPick.pickOption.lastFuzzy;
         if (value == null) { el.style.outline = '3px solid #e69500'; broken = true; continue; }
-        el.style.outline = '2px solid #0a7d2c';
+        el.style.outline = fuzzy ? '3px dashed #e69500' : '2px solid #0a7d2c';
+        if (fuzzy) { el.title = T('panel_verify_field'); toCheck++; }
         picked++;
         if (el.value === value) continue;
         const next = chain[i + 1] && document.getElementById(chain[i + 1].id);
