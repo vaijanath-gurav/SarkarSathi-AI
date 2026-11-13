@@ -5,4 +5,5 @@
 - [Verify against the PS](verify-against-ps.md) — map every plan to PS 19 wording; surface unstated choices as decisions
 - [SAMPLE watermark always](sample-watermark-always.md) — edited official-format images always carry a SAMPLE watermark; never remove it, even for tests
 - [Read transcripts in full](read-transcripts-in-full.md) — never truncate user messages when learning; requirements go into plan §00 quoted
+- [Discuss before solution](discuss-before-solution.md) — design questions: explore problem + options with the user first; "should I build X?" is not discussion
 - [Delegate all building](delegate-all-building.md) — never code directly; plan, then hand to a Sonnet subagent and stay available

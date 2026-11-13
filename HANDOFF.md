@@ -5,6 +5,49 @@ Read this file first. It is the single entry point for anyone continuing this wo
 
 ---
 
+## ★★ LATEST — end of session 2026-11-14 (read before the ★ block below)
+
+**First:** read `BUILD_PLAN_EXTENSION.md` §00 (R1–R9, the user's words) and the memory index
+(`handoff/memory/MEMORY.md`), especially `discuss-before-solution` and `read-transcripts-in-full`.
+**Rule that caused most of today's rework:** for any design question, DISCUSS the problem and
+options with the user first. "Should I build X?" with a finished design is NOT discussion.
+
+**Commits since the ★ block:** `9f8976e` voice independent of documents · `d645db9` spoken number
+words → digits, English-page dropdowns · `20eb93b` uploads compared per form · `8821e01` uploads
+checked against the form's NAME box, multi-name income/7/12, odd-one-out. **Nothing pushed**
+(GitHub still at `16f4186`). Before pushing (this repo is the hackathon submission): decide with the
+user whether to untrack `handoff/memory/` (mentions the user's first name) and `.claude/launch.json`.
+
+**In flight at handoff — VERIFY FIRST:** a subagent was rewriting `resolveNames` in `src/rulebook.js`
+to the agreed rule: *the form never decides a dispute between documents; only documents vote; no
+verdict on a tie*. Expected: `npm test` → 59, 28, 16, 19, 13, 15, 5, 12 passed; i18n 90 keys each;
+new keys `name_conflict_single`, `name_odd_doc`, `name_conflict`. If `git status` shows these files
+modified and tests match, restart the server and run the user's cases through `POST /api/check-names`
+(form copied from a wrong Aadhaar + correct income → neutral `name_conflict`, neither blamed;
+2 docs agree vs form → `form_name_suspect`; 2 vs 1 → `name_odd_doc` on the odd one), then commit.
+
+**What the product IS (R9):** two independent features — voice/chat form filling (primary) and
+automated pre-submission OCR validation on upload. Fill-from-documents (Ctrl+Shift+F) is an extra.
+
+**Upload name rules (agreed with the user):** each upload is checked on its own validity, and its
+name against the form's NAME box (7/12 against the Land Holder box when filled). Any listed name
+counts (7/12 co-owners, "parents of" on income certificates). Documents vote among themselves; the
+form never breaks a tie (it may have been copied from the first document).
+
+**Voice (works without documents):** the field label decides the script (English field → Latin,
+Marathi field → Devanagari); name fields get a name hint and reject sentence-like transcripts;
+numeric fields turn spoken number words into digits; the voice log masks 12-digit IDs.
+
+**Open, needs the user:** desktop app — the user expected a visible window (tray icon is NOT it;
+discuss what the window shows before building). Continuity gaps not yet discussed: converted /
+compressed files should go straight back into the upload slot; a "ready to submit?" summary.
+Proofreading of ~45 Hindi/Marathi strings. Second real curated form needs a saved page.
+
+**Running services:** start with `npm start`, `python stt/server.py`, Ollama. Reload the extension at
+chrome://extensions after any change to `extension/`. Demo form: http://localhost:3000/portal-ews.html
+
+---
+
 ## ★ CURRENT STATE — 2026-11-14 (read this block first; everything below it is history)
 
 **Read `BUILD_PLAN_EXTENSION.md` §00 "User requirements" (R1–R8) before anything else.**
