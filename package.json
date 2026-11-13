@@ -1,0 +1,17 @@
+{
+  "name": "govtech-verify",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "PS 19 - AI Government Form & Document Verification Assistant",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test:rules": "node src/rulebook.test.js",
+    "test:pdf": "node src/pdf.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pdf-lib": "^1.17.1"
+  }
+}
