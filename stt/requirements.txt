@@ -1,0 +1,19 @@
+# Install:  python -m pip install -r stt/requirements.txt
+
+faster-whisper==1.2.1
+av
+numpy
+
+# NOTE on PyAV.
+# faster-whisper 1.2.1's own decoder calls av.open(..., metadata_errors="ignore"), an
+# argument PyAV removed after v14. With current PyAV (19.x) every transcription fails:
+#     open() got an unexpected keyword argument 'metadata_errors'
+#
+# Pinning av<15 does NOT work here: there is no prebuilt wheel for Python 3.12 on
+# Windows, and building from source needs FFmpeg dev libraries.
+#
+# So stt/server.py decodes audio itself via decode_audio() using the current PyAV API
+# and passes a numpy array to model.transcribe(). Do not revert to passing a file path.
+#
+# The trap: the service starts fine and /health returns ok either way. This only shows
+# up on the first real voice note.

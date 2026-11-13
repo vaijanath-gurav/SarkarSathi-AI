@@ -4,6 +4,21 @@
 
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
+/**
+ * ADR-8: outputScript is 'latin' by default, so prefer the Roman-script field.
+ * Standard PDF fonts are WinAnsi-encoded and THROW on Devanagari, so anything
+ * unencodable is stripped rather than allowed to crash form generation.
+ * Switching a form to outputScript 'devanagari' means embedding a Unicode font
+ * via @pdf-lib/fontkit; this helper is the seam where that happens.
+ */
+const latin = (obj, field) => obj?.[`${field}_latin`] || obj?.[field];
+
+function safe(value) {
+  if (value == null) return '—';
+  const cleaned = String(value).replace(/[^\x20-\xFF]/g, '').replace(/\s+/g, ' ').trim();
+  return cleaned || '—';
+}
+
 export async function generateEWSForm(profile) {
   const { identity, income, land, purpose } = profile;
 
@@ -16,13 +31,13 @@ export async function generateEWSForm(profile) {
   let y = 790;
 
   const line = (text, { size = 11, f = font, gap = 18, color = rgb(0.1, 0.1, 0.1) } = {}) => {
-    page.drawText(String(text ?? '—'), { x: M, y, size, font: f, color });
+    page.drawText(safe(text), { x: M, y, size, font: f, color });
     y -= gap;
   };
 
   const field = (label, value) => {
     page.drawText(`${label}:`, { x: M, y, size: 10, font: bold, color: rgb(0.35, 0.35, 0.35) });
-    page.drawText(String(value ?? '—'), { x: M + 170, y, size: 11, font });
+    page.drawText(safe(value), { x: M + 170, y, size: 11, font });
     y -= 22;
   };
 
@@ -39,7 +54,7 @@ export async function generateEWSForm(profile) {
   rule();
 
   line('APPLICANT DETAILS', { size: 11, f: bold, gap: 20 });
-  field('Full Name', identity?.full_name);
+  field('Full Name', latin(identity, 'full_name'));
   field('Date of Birth', identity?.date_of_birth);
   field('Gender', identity?.gender);
   field('Address', identity?.address);
@@ -57,11 +72,11 @@ export async function generateEWSForm(profile) {
   rule();
 
   line('LAND HOLDING (7/12 EXTRACT)', { size: 11, f: bold, gap: 20 });
-  field('Village', land?.village_name);
-  field('Taluka & District', land?.taluka_and_district);
+  field('Village', latin(land, 'village_name'));
+  field('Taluka & District', latin(land, 'taluka_and_district'));
   field('Survey / Gat Number', land?.survey_number);
   field('Total Area (Hectares)', land?.total_area_hectares);
-  field('Registered Owners', (land?.owner_names || []).join(', '));
+  field('Registered Owners', (land?.owner_names_latin || land?.owner_names || []).join(', '));
   y -= 6;
   rule();
 

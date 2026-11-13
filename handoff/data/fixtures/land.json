@@ -1,0 +1,11 @@
+{
+  "_comment": "7/12 extracts are usually Devanagari-only, so owner_names_latin IS a transliteration. This fixture exercises the cross-script match in ADR-8.",
+  "document_type": "LAND_RECORD",
+  "village_name": "कंधार",
+  "taluka_and_district": "कंधार, नांदेड",
+  "survey_number": "142/2B",
+  "total_area_hectares": "1.21",
+  "owner_names": ["रमेश शंकर पाटील", "सुनिता रमेश पाटील"],
+  "owner_names_latin": ["Ramesh Shankar Paatil", "Sunita Ramesh Paatil"],
+  "record_print_date": "2026-09-02"
+}

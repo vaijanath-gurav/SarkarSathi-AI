@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Government Document Verification</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --line: #262b38; --ink: #e8eaf0;
+    --muted: #8b93a7; --ok: #3ddc97; --bad: #ff6b6b; --warn: #ffb648; --accent: #5b8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 system-ui, "Segoe UI", "Nirmala UI", sans-serif;
+  }
+  header {
+    padding: 22px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 980px; margin: 0 auto; padding: 26px 28px 64px; }
+  .step { color: var(--muted); font-size: 12px; text-transform: uppercase;
+          letter-spacing: .9px; margin: 30px 0 12px; }
+  .docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+  .doc {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; position: relative;
+  }
+  .doc h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+  .doc p { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; }
+  input[type=file] { width: 100%; font-size: 12.5px; color: var(--muted); }
+  .state { margin-top: 10px; font-size: 12.5px; min-height: 18px; }
+  .state.busy { color: var(--warn); }
+  .state.done { color: var(--ok); }
+  .state.err  { color: var(--bad); }
+  select, button {
+    font: inherit; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); padding: 8px 12px;
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+          border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.k { color: var(--muted); width: 190px; font-size: 13px; }
+  td.v input { width: 100%; background: #10131b; border: 1px solid var(--line);
+               color: var(--ink); border-radius: 6px; padding: 7px 10px; font: inherit; }
+  .issue { border-left: 3px solid var(--bad); background: #221418;
+           padding: 11px 14px; border-radius: 6px; margin-bottom: 9px; font-size: 13.5px; }
+  .pass  { border-left: 3px solid var(--ok); background: #122019;
+           padding: 11px 14px; border-radius: 6px; font-size: 13.5px; }
+  .hidden { display: none; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  code { background: #10131b; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Government Document Verification</h1>
+  <span class="sub">Documents are read and checked locally &mdash; nothing leaves this machine</span>
+  <span style="flex:1"></span>
+  <select id="lang">
+    <option value="en">English</option>
+    <option value="hi">हिंदी</option>
+    <option value="mr">मराठी</option>
+  </select>
+</header>
+
+<main>
+  <div class="step">Step 1 &mdash; upload the three documents</div>
+  <div class="docs">
+    <div class="doc">
+      <h3>Identity / Aadhaar</h3>
+      <p>Name, date of birth, address</p>
+      <input type="file" accept="image/*" data-type="identity">
+      <div class="state" data-state="identity"></div>
+    </div>
+    <div class="doc">
+      <h3>Income Certificate</h3>
+      <p>Certified annual income, issue date</p>
+      <input type="file" accept="image/*" data-type="income">
+      <div class="state" data-state="income"></div>
+    </div>
+    <div class="doc">
+      <h3>7/12 Land Record</h3>
+      <p>Survey number, area, owner names</p>
+      <input type="file" accept="image/*" data-type="land">
+      <div class="state" data-state="land"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <label class="note"><input type="checkbox" id="demo"> Use demo fixtures instead of real photos</label>
+  </div>
+
+  <section id="purposeBox" class="hidden">
+    <div class="step">Step 2 &mdash; one detail that is on no document</div>
+    <table><tr>
+      <td class="k">Purpose of application</td>
+      <td class="v"><input id="purpose" placeholder="e.g. School admission"></td>
+    </tr></table>
+  </section>
+
+  <section id="checkBox" class="hidden">
+    <div class="step">Step 3 &mdash; pre-submission validation</div>
+    <div id="checkResult"></div>
+    <div class="row"><button id="recheck">Re-check</button></div>
+  </section>
+
+  <section id="reviewBox" class="hidden">
+    <div class="step">Step 4 &mdash; check every field before the form is generated</div>
+    <table id="reviewTable"></table>
+    <div class="row">
+      <button class="primary" id="generate">Generate form</button>
+      <span class="note">Nothing is submitted. You download the form and submit it yourself.</span>
+    </div>
+  </section>
+</main>
+
+<script>
+const profile = { identity: null, income: null, land: null, purpose: null };
+const lang = () => document.getElementById('lang').value;
+const $ = (s) => document.querySelector(s);
+
+const DEMO = {
+  identity: { document_type:'IDENTITY_CARD', full_name:'रमेश शंकर पाटील', full_name_latin:'Ramesh Shankar Patil',
+    date_of_birth:'1982-07-14', gender:'MALE', address:'At Post Kandhar, Tal. Kandhar, Dist. Nanded, Maharashtra',
+    pin_code:'431714', id_number_last_four:'7391', image_quality_flag:false },
+  income: { document_type:'INCOME_CERTIFICATE', applicant_name:'Ramesh Shankar Patil',
+    applicant_name_latin:'Ramesh Shankar Patil', certified_annual_income:'186000',
+    issuing_authority:'Tahsildar, Kandhar', issue_date:'2026-04-18', certificate_number:'MH/NAN/INC/2026/044812' },
+  land: { document_type:'LAND_RECORD', village_name:'कंधार', taluka_and_district:'कंधार, नांदेड',
+    survey_number:'142/2B', total_area_hectares:'1.21',
+    owner_names:['रमेश शंकर पाटील','सुनिता रमेश पाटील'],
+    owner_names_latin:['Ramesh Shankar Paatil','Sunita Ramesh Paatil'], record_print_date:'2026-09-02' }
+};
+
+function setState(type, text, cls) {
+  const el = document.querySelector(`[data-state="${type}"]`);
+  el.textContent = text;
+  el.className = 'state ' + (cls || '');
+}
+
+document.querySelectorAll('input[type=file]').forEach((input) => {
+  input.addEventListener('change', async () => {
+    const type = input.dataset.type;
+    const file = input.files[0];
+    if (!file) return;
+
+    if ($('#demo').checked) {
+      profile[type] = structuredClone(DEMO[type]);
+      setState(type, 'demo fixture loaded', 'done');
+      return afterUpload();
+    }
+
+    setState(type, 'reading with local model…', 'busy');
+    const imageBase64 = await new Promise((res) => {
+      const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file);
+    });
+
+    try {
+      const r = await fetch('/api/extract', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docType: type, imageBase64 })
+      });
+      const out = await r.json();
+      if (!out.ok) throw new Error(out.error || 'extraction failed');
+      profile[type] = out.data;
+      const shown = out.data.full_name || out.data.applicant_name || out.data.village_name || '—';
+      setState(type, `read in ${out.elapsed}s — ${shown}`, 'done');
+      afterUpload();
+    } catch (err) {
+      setState(type, err.message, 'err');
+    }
+  });
+});
+
+$('#demo').addEventListener('change', (e) => {
+  if (!e.target.checked) return;
+  for (const k of ['identity','income','land']) {
+    profile[k] = structuredClone(DEMO[k]);
+    setState(k, 'demo fixture loaded', 'done');
+  }
+  afterUpload();
+});
+
+function afterUpload() {
+  if (profile.identity && profile.income && profile.land) {
+    $('#purposeBox').classList.remove('hidden');
+    $('#checkBox').classList.remove('hidden');
+    validate();
+  }
+}
+
+$('#purpose').addEventListener('input', (e) => { profile.purpose = e.target.value.trim() || null; });
+$('#recheck').addEventListener('click', validate);
+$('#lang').addEventListener('change', () => { if (profile.identity) validate(); });
+
+async function validate() {
+  const r = await fetch('/api/validate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile, lang: lang() })
+  });
+  const out = await r.json();
+  const box = $('#checkResult');
+
+  if (out.errors.length) {
+    box.innerHTML = out.errors.map((e) => `<div class="issue">${e.message}</div>`).join('');
+    $('#reviewBox').classList.add('hidden');
+    return;
+  }
+
+  if (out.missing.includes('purpose')) {
+    box.innerHTML = '<div class="issue">All documents are consistent. Enter the purpose above to continue.</div>';
+    $('#reviewBox').classList.add('hidden');
+    return;
+  }
+
+  box.innerHTML = '<div class="pass">All three documents checked — names, dates, income and land area are consistent.</div>';
+  renderReview();
+}
+
+async function renderReview() {
+  const fields = await (await fetch('/api/fields?lang=' + lang())).json();
+  const table = $('#reviewTable');
+  table.innerHTML = '';
+
+  for (const f of fields) {
+    const printed = f.path.reduce((o, k) => (o == null ? undefined : o[k]), profile);
+    const roman = f.latinPath ? f.latinPath.reduce((o, k) => (o == null ? undefined : o[k]), profile) : null;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="k">${f.label}</td><td class="v"></td>`;
+    const input = document.createElement('input');
+    input.value = roman && roman !== printed ? roman : (printed ?? '');
+    if (roman && roman !== printed) input.title = 'On document: ' + printed;
+
+    input.addEventListener('input', () => {
+      const write = (p) => {
+        const parent = p.slice(0, -1).reduce((o, k) => (o[k] ??= {}), profile);
+        parent[p[p.length - 1]] = input.value;
+      };
+      write(f.path);
+      if (f.latinPath) write(f.latinPath);
+    });
+
+    tr.querySelector('.v').appendChild(input);
+    table.appendChild(tr);
+  }
+  $('#reviewBox').classList.remove('hidden');
+}
+
+$('#generate').addEventListener('click', async () => {
+  const btn = $('#generate');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const r = await fetch('/api/pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile, lang: lang() })
+    });
+    if (!r.ok) {
+      const out = await r.json();
+      alert((out.errors || []).map((e) => e.message).join('\n') || 'Validation failed');
+      return;
+    }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'EWS_Application.pdf';
+    a.click();
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate form';
+  }
+});
+</script>
+</body>
+</html>

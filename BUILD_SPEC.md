@@ -4,6 +4,17 @@
 **Context:** 24-hour hackathon. ~19 hours remaining at time of writing.
 **Status:** this document supersedes `govtech_whatsapp_assistant_builder_agent_blueprint.md`.
 
+> **Partly superseded itself.** The product later pivoted from a WhatsApp-first citizen
+> tool to a CSC-operator tool: a local service plus a Chrome extension filling government
+> portal forms from verified documents. See `BUILD_PLAN_EXTENSION.md` (D1–D15) for the
+> current architecture and `HANDOFF.md` for state and known defects.
+>
+> **Still authoritative here:** ADR-1 (VLM over OCR), ADR-2 (deterministic rulebook, not
+> an LLM), ADR-3 (pre-written i18n catalogs), ADR-8 (script handling), ADR-9 (review
+> before generation), ADR-10 (voice limits). The rulebook, schemas, prompts and language
+> handling are unchanged by the pivot. The WhatsApp transport in ADR-5 is now a fallback
+> surface rather than the primary one.
+
 Read Section 1 before writing any code. It records decisions that have already been
 made, including one that a previous agent silently overrode. **Do not re-decide these.
 If you believe a decision is wrong, say so and stop — do not substitute your own.**
@@ -191,17 +202,78 @@ the same delta-intake pattern that already asks for "purpose of application".
 3 photos → extract → validate → review each field in chat → corrections → PDF → user submits
 ```
 
-### ADR-7: Language scope — ⚠️ OPEN, NOT DECIDED
+### ADR-10: Voice is for commands, NOT dictation — measured, not assumed
 
-**Current state:** English + Marathi are built (`src/i18n/{en,mr}.json`, 19 strings each).
+**Decided:** `faster-whisper` `small`, with the session language always forced. Voice
+drives confirmations and field selection. Values are typed.
 
-**This was never a decision.** It cascaded unexamined: a previous agent chose the 7/12
-extract as the land record, the 7/12 is a Maharashtra document, and Marathi followed.
-Hindi — which has far greater reach — was never considered.
+**Measured on the target machine** (RTX 3050 laptop, CPU int8, four real Marathi clips):
 
-**Builder agent: do not resolve this yourself. Ask the team.**
+| Setting | Result |
+|---|---|
+| `small`, language forced | 1.6–3.0s, partial transcript |
+| `small`, auto-detect | identified Marathi as **Tagalog** (0.33); Latin gibberish |
+| `medium` | **118s** for a 3.5s clip, output was `॥।।` — worse AND 70× slower |
 
-**Context for the decision:**
+**Never auto-detect.** The language button is the single source of truth and is passed
+to Whisper on every request. Auto-detect is not a fallback; it is actively harmful.
+
+**Do not "upgrade" to medium.** Bigger is worse here. Re-measure before changing.
+
+**The accuracy shape, from ground truth** ("माझ्याकडे एक फोन आहे"):
+
+```
+माझ्याकडे -> माजा करे   (close)
+एक        -> एक          EXACT
+फोन       -> पोज         WRONG - a different word entirely
+आहे       -> आहिए        (close)
+```
+
+Across four clips the pattern held: **numbers and short fixed words transcribe
+reliably; content words do not.** One clip failed completely (`ौ ौ ौ ौ`, degenerate
+repetition).
+
+**Why this is survivable:** B9's correction protocol is numeric (`3 <value>`), and the
+number is exactly the part that transcribes correctly. Voice selects the field and
+confirms; the value is typed. That is not a workaround bolted on afterwards — the
+protocol happened to sit on the reliable part.
+
+**Pitch framing:** demo the bot mishearing and the user correcting it. Every judge has
+had voice input mangle their name; a visible correction is more convincing than a claim
+of perfect transcription.
+
+**Known gap, deliberately left:** a voice correction currently applies immediately with
+an echo. Given फोन→पोज, voice corrections could instead require explicit confirmation
+before being written, while typed ones apply directly. One extra round trip. Not built.
+
+### ADR-7: Language scope — DECIDED: English, Hindi, Marathi
+
+**Decided 2026-11-13:** three languages. `src/i18n/{en,hi,mr}.json`, 35 keys each,
+enforced identical by `src/i18n.test.js`.
+
+**Stop at three.** Not because more is hard — a new language is one JSON file — but
+because **you can only ship languages a team member can proofread.** A garbled string
+shown to a judge who speaks that language is worse than plain English. Three is also the
+maximum number of WhatsApp reply buttons; a fourth needs an interactive list.
+
+**Pitch line:** *"adding a language is one JSON file — we shipped three we can vouch for."*
+
+**How Marathi originally got in:** it cascaded unexamined. A previous agent chose the
+7/12 extract as the land record, the 7/12 is a Maharashtra document, and Marathi
+followed. Hindi — with far greater reach — was never considered until the team caught it.
+Recorded because it shows how an unstated choice becomes a fact nobody decided.
+
+**Adding a fourth language (if someone can verify it):**
+1. Copy `en.json` → `xx.json`, translate all 35 values
+2. Import and register it in `src/i18n/index.js`
+3. Replace the button picker in `sendWhatsAppLanguagePicker` with an interactive list
+4. Add the language code to `SUPPORTED` in `src/stt.js`
+5. Add its field words to `FIELD_WORDS` in `src/stt.js` and confirm words to
+   `CONFIRM_WORDS` in `src/review.js`
+6. `node src/i18n.test.js` must pass — it checks key parity, placeholder integrity and
+   untranslated strings
+
+**Original context for the decision:**
 - Language scope and document choice are **coupled**. The 7/12 is Maharashtra/Gujarat; the
   equivalent is the Khasra/Khatauni in UP and MP, the Jamabandi in Punjab, Haryana and
   Rajasthan. Dropping Marathi means changing the demo land record to stay coherent.
@@ -501,8 +573,8 @@ Dev 4 must not wait for Dev 1. Flip to `false` when the model is ready; nothing 
 | B6 | Extraction | Dev 1 | a **real photograph** of each document type yields valid JSON |
 | B7 | i18n | Dev 3 | every error path renders in both languages |
 | B8 | Integration | all | photo on phone → validated → PDF back on phone |
-| B9 | Review & correct | Dev 2 | every field confirmed or corrected in chat before the PDF is made |
-| B10 | Voice (optional) | Dev 1 | OGG/Opus → ffmpeg → WAV → transcript + language code |
+| B9 | Review & correct | Dev 2 | every field confirmed or corrected in chat before the PDF is made — **DONE, 28 tests** |
+| B10 | Voice | Dev 1 | **DONE, 16 tests.** Local Whisper service, no ffmpeg needed (faster-whisper bundles PyAV). See ADR-10 for measured limits. |
 
 **B8 must be true by hour 16 even if ugly, English-only and with a crude PDF.** If hour 16
 arrives without it, stop adding features and make what exists demo-reliable.
@@ -530,6 +602,9 @@ machine transliteration safe to put on a government form.
 | G5 | Model returns unparseable JSON | Sanitiser + single retry + user-facing error that never shows a stack trace. |
 | G6 | Venue Wi-Fi fails | Phone hotspot; **pre-record a screen capture of the full flow as backup**. |
 | G7 | Judge challenges Aadhaar handling | Answer ready: processed locally, never transmitted, last 4 digits only, no UIDAI contact. |
+| G8 | Judge asks why voice transcription is imperfect | Answer ready, and demo it rather than hide it: open models are weak on Marathi, so the user confirms every field before anything is generated. Nothing reaches the form unverified. See ADR-10. |
+| G9 | Someone reinstalls the STT deps with `pip install faster-whisper` | Breaks every transcription (`metadata_errors`) while `/health` still reports OK. Use `stt/requirements.txt`; `stt/server.py` decodes audio itself. |
+| G10 | Devanagari transcript crashes the STT log on Windows | Fixed — stdout is reconfigured to UTF-8. Without it, cp1252 raises `charmap` errors *after* a successful transcription, which reads like a model failure. |
 
 ---
 

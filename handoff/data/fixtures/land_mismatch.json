@@ -1,0 +1,11 @@
+{
+  "_comment": "THE DEMO DOCUMENT. Surname is Pawar, not Patil. This is the planted error the bot catches on stage.",
+  "document_type": "LAND_RECORD",
+  "village_name": "कंधार",
+  "taluka_and_district": "कंधार, नांदेड",
+  "survey_number": "142/2B",
+  "total_area_hectares": "1.21",
+  "owner_names": ["रमेश शंकर पवार", "सुनिता रमेश पवार"],
+  "owner_names_latin": ["Ramesh Shankar Pawar", "Sunita Ramesh Pawar"],
+  "record_print_date": "2026-09-02"
+}

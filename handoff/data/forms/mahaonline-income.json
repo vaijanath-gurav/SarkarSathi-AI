@@ -1,0 +1,12 @@
+{
+  "name": "Income Certificate Application (Maharashtra)",
+  "urlPattern": "/portal.html",
+  "fields": {
+    "#applicantName": "identity.full_name_latin",
+    "#address": "identity.address",
+    "#village": "land.village_name",
+    "#income": "income.certified_annual_income",
+    "#surveyNo": "land.survey_number",
+    "#purpose": "purpose"
+  }
+}

@@ -1,6 +1,8 @@
 {
+  "_comment": "Aadhaar prints bilingually, so full_name_latin is the document's own English line, not a transliteration.",
   "document_type": "IDENTITY_CARD",
-  "full_name": "Ramesh Shankar Patil",
+  "full_name": "रमेश शंकर पाटील",
+  "full_name_latin": "Ramesh Shankar Patil",
   "date_of_birth": "1982-07-14",
   "gender": "MALE",
   "address": "At Post Kandhar, Tal. Kandhar, Dist. Nanded, Maharashtra",

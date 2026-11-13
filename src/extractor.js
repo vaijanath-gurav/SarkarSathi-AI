@@ -6,7 +6,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const VLM_MODEL = process.env.VLM_MODEL || 'qwen2-vl:7b';
+// Must match ADR-3 in BUILD_SPEC.md. Not qwen2-vl: that is a generation behind and
+// markedly worse on Devanagari. Not the 8b: it will not fit 6GB VRAM.
+const VLM_MODEL = process.env.VLM_MODEL || 'qwen3-vl:4b-instruct';
 const USE_MOCK = process.env.USE_MOCK !== 'false';
 
 export const SYSTEM_PROMPT = `You are a highly secure, deterministic Government Document OCR Data Extraction Engine. Your sole function is to analyze the provided image, extract the required fields, and output them STRICTLY as a valid JSON object.
@@ -16,16 +18,20 @@ CRITICAL CONSTRAINTS:
 2. ZERO HALLUCINATION: Do not infer, guess, or calculate any missing information. If a requested field is blurry, cropped, or not present in the image, you must output the exact string "NULL" for that key.
 3. NO DATE MATH: Never compute ages, durations, validity or expiry. Transcribe dates exactly as printed and nothing more.
 4. EXACT SPELLING: Transcribe names and addresses exactly as they appear in the image, preserving all regional spellings and typos.
-5. REDACTION COMPLIANCE: Never output a full 12-digit government ID number. Output only the digits explicitly requested by the schema.`;
+5. REDACTION COMPLIANCE: Never output a full 12-digit government ID number. Output only the digits explicitly requested by the schema.
+6. TRANSLITERATION: Converting a visible name into Roman script is permitted and required. Inventing a name that is not visible is not.
+7. VALUES ONLY: Never include a field's printed label in its value. If the document shows "Address: 12 Main Street", output "12 Main Street", not "Address: 12 Main Street". The same applies to every field.
+8. SCRIPT FIDELITY: Transcribe in the exact script printed on the document. Devanagari, Gurmukhi, Gujarati, Tamil and other Indic scripts are NOT interchangeable. Never convert between them. Only the *_latin fields may be transliterated.`;
 
 export const SCHEMAS = {
   identity: `Analyze the attached identity document. Map the visible text to the following JSON schema exactly. Return ONLY the JSON.
 {
   "document_type": "IDENTITY_CARD",
-  "full_name": "String - The exact full name of the individual",
+  "full_name": "String - The full name EXACTLY as printed, in the script printed on the document",
+  "full_name_latin": "String - The same name in Roman script. If the document prints an English version, copy that EXACTLY. Otherwise transliterate it.",
   "date_of_birth": "String - Format strictly as YYYY-MM-DD. If only birth year is visible, output YYYY",
   "gender": "String - MALE, FEMALE, or OTHER",
-  "address": "String - The complete printed address, combining all lines",
+  "address": "String - The complete printed address, combining all lines. Do NOT include the word 'Address' or any other field label.",
   "pin_code": "String - The 6-digit postal code if visible",
   "id_number_last_four": "String - Only the final 4 digits of the ID number",
   "image_quality_flag": "Boolean - Set to true if the image is too blurry to read critical fields"
@@ -34,7 +40,8 @@ export const SCHEMAS = {
   income: `Analyze the attached state-issued Income Certificate. Map the visible text to the following JSON schema exactly. Return ONLY the JSON.
 {
   "document_type": "INCOME_CERTIFICATE",
-  "applicant_name": "String - The name of the person whose income is being certified",
+  "applicant_name": "String - The name EXACTLY as printed, in the script printed on the document",
+  "applicant_name_latin": "String - The same name in Roman script. If an English version is printed, copy it EXACTLY. Otherwise transliterate.",
   "certified_annual_income": "String - The total annual income amount in numbers (e.g., 120000)",
   "issuing_authority": "String - The designation of the officer who issued the certificate",
   "issue_date": "String - The exact date the certificate was issued, formatted as YYYY-MM-DD",
@@ -48,7 +55,8 @@ export const SCHEMAS = {
   "taluka_and_district": "String - The sub-district (Taluka) and District names",
   "survey_number": "String - The Survey Number / Gat Number / Khata Number",
   "total_area_hectares": "String - The total land area listed, usually in Hectares or Acres",
-  "owner_names": ["String - Array of all individual occupant/owner names listed in the ownership column. Extract every name."],
+  "owner_names": ["String - Array of all occupant/owner names in the ownership column, EXACTLY as printed. Extract every name."],
+  "owner_names_latin": ["String - The same names in Roman script, in the same order."],
   "record_print_date": "String - The print/issue date stamped on the extract, formatted YYYY-MM-DD. Output NULL if no date is printed."
 }`,
 };
@@ -101,7 +109,12 @@ export async function extractDocument(imageBuffer, docType) {
   if (!SCHEMAS[docType]) throw new Error(`Unknown docType: ${docType}`);
 
   if (USE_MOCK) {
-    const file = path.join(process.cwd(), 'fixtures', `${docType}.json`);
+    // MOCK_IDENTITY / MOCK_INCOME / MOCK_LAND override which fixture is returned,
+    // so a simulated run can feed the planted-mismatch record. Default is the
+    // fixture named after the document type.
+    const override = process.env[`MOCK_${docType.toUpperCase()}`];
+    const basename = override || docType;
+    const file = path.join(process.cwd(), 'fixtures', `${basename}.json`);
     return JSON.parse(await fs.readFile(file, 'utf8'));
   }
 

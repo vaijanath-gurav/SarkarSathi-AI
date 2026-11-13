@@ -1,0 +1,42 @@
+{
+  "capturedAt": "2026-11-13T16:52:43.284Z",
+  "node": "v24.18.0",
+  "deps": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pdf-lib": "^1.17.1"
+  },
+  "tests": {},
+  "files": [
+    "clients.js",
+    "extract.cli.js",
+    "extractor.js",
+    "fieldmap.js",
+    "fieldmap.test.js",
+    "i18n.test.js",
+    "pdf.js",
+    "pdf.test.js",
+    "review.js",
+    "review.test.js",
+    "rulebook.js",
+    "rulebook.test.js",
+    "server.js",
+    "session.js",
+    "simulate.js",
+    "simulate.test.js",
+    "stt.js",
+    "stt.test.js",
+    "web.js",
+    "whatsapp.js"
+  ],
+  "extension": [
+    "background.js",
+    "content.js",
+    "manifest.json"
+  ],
+  "masterFolders": [
+    "ADHAAR",
+    "INCOME CERTIFICATE",
+    "LAND RECORDS"
+  ]
+}

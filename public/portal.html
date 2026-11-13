@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<title>उत्पन्नाचा दाखला अर्ज</title>
+<style>
+  body { background: #fff; color: #000; font-family: "Times New Roman", serif; max-width: 760px; margin: 20px auto; padding: 0 16px; }
+  h1, h2 { text-align: center; margin: 4px 0; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; font-weight: normal; }
+  hr { border: 0; border-top: 2px solid #000; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { border: 1px solid #000; padding: 6px 8px; vertical-align: middle; }
+  td.l { width: 36%; background: #f4f4f4; }
+  input, textarea { width: 95%; border: 1px solid #555; padding: 4px; font-size: 14px; }
+  .checklist { border: 1px solid #000; padding: 8px 14px; margin: 14px 0; }
+  .checklist h3 { margin: 0 0 6px; font-size: 15px; }
+  button { padding: 6px 24px; font-size: 15px; }
+  #result { margin-left: 12px; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>महाराष्ट्र शासन</h1>
+<h2>उत्पन्नाचा दाखला मिळण्यासाठी अर्ज</h2>
+<hr>
+<table>
+  <tr><td class="l"><label for="applicantName">अर्जदाराचे नाव</label></td><td><input type="text" id="applicantName" name="applicantName"></td></tr>
+  <tr><td class="l"><label for="address">पत्ता</label></td><td><textarea id="address" name="address" rows="2"></textarea></td></tr>
+  <tr><td class="l"><label for="village">राहणार / गाव</label></td><td><input type="text" id="village" name="village"></td></tr>
+  <tr><td class="l"><label for="taluka">तहसील</label></td><td><input type="text" id="taluka" name="taluka"></td></tr>
+  <tr><td class="l"><label for="district">जिल्हा</label></td><td><input type="text" id="district" name="district"></td></tr>
+  <tr><td class="l"><label for="income">वार्षिक उत्पन्न (रुपये)</label></td><td><input type="text" id="income" name="income"></td></tr>
+  <tr><td class="l"><label for="surveyNo">सर्व्हे नंबर / गट नंबर</label></td><td><input type="text" id="surveyNo" name="surveyNo"></td></tr>
+  <tr><td class="l"><label for="purpose">दाखला कशासाठी हवा आहे (कारण)</label></td><td><input type="text" id="purpose" name="purpose"></td></tr>
+  <tr><td class="l"><label for="mobile">मोबाईल क्रमांक</label></td><td><input type="text" id="mobile" name="mobile"></td></tr>
+  <tr><td class="l"><label for="date">दिनांक</label></td><td><input type="text" id="date" name="date"></td></tr>
+</table>
+<div class="checklist">
+  <h3>आवश्यक कागदपत्रे</h3>
+  <div>आधार कार्ड</div>
+  <div>रहिवासी पुरावा</div>
+  <div>७/१२ उतारा</div>
+</div>
+<button type="button" onclick="document.getElementById('result').textContent='सादर केले'">सादर करा</button>
+<span id="result"></span>
+</body>
+</html>

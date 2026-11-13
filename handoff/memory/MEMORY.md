@@ -1,0 +1,4 @@
+- [Project is a hackathon demo](project-is-hackathon-demo.md) — 24h hackathon build; business model is pitch framing only
+- [Prefers direct answers](prefers-direct-answers.md) — answer what was asked; act fast under time pressure, skip the preamble
+- [Auto-retry downloads](auto-retry-downloads.md) — restart failed installs in the background without asking
+- [Delegate all building](delegate-all-building.md) — never code directly; plan, then hand to a Sonnet subagent and stay available

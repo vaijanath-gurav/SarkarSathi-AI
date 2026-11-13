@@ -9,9 +9,16 @@
 
 import { t } from './i18n/index.js';
 
-/** Fields that land on the form and are therefore correctable. */
+/**
+ * Fields that land on the form and are therefore correctable.
+ * `latinPath` marks a field whose form value is the Roman-script variant: the user is
+ * shown BOTH (printed, so they can check it against the paper in their hand; and Latin,
+ * because that is what actually goes on the form). A correction overwrites both, since
+ * a value the user typed is authoritative over any machine transliteration (ADR-8).
+ */
 export const REVIEW_FIELDS = [
-  { id: 'name',    path: ['identity', 'full_name'],                 label: 'f_name' },
+  { id: 'name',    path: ['identity', 'full_name'],                 label: 'f_name',
+    latinPath: ['identity', 'full_name_latin'] },
   { id: 'dob',     path: ['identity', 'date_of_birth'],             label: 'f_dob' },
   { id: 'address', path: ['identity', 'address'],                   label: 'f_address' },
   { id: 'income',  path: ['income', 'certified_annual_income'],     label: 'f_income' },
@@ -36,8 +43,15 @@ function writePath(profile, path, value) {
  */
 export function buildReviewSummary(profile, lang) {
   const lines = REVIEW_FIELDS.map((f, i) => {
-    const value = readPath(profile, f.path);
-    return `${i + 1}. ${t(lang, f.label)}: ${value ?? '—'}`;
+    const printed = readPath(profile, f.path);
+    const roman = f.latinPath ? readPath(profile, f.latinPath) : null;
+
+    // Show both only when they actually differ — otherwise it is noise.
+    const shown = roman && roman !== printed
+      ? `${printed ?? '—'} (${roman})`
+      : (printed ?? roman ?? '—');
+
+    return `${i + 1}. ${t(lang, f.label)}: ${shown}`;
   });
 
   return [
@@ -60,21 +74,37 @@ const CONFIRM_WORDS = [
  *          |{action:'corrected', field:object, value:string}
  *          |{action:'unparsed'}}
  */
+/**
+ * Whisper punctuates its transcripts, so a spoken "okay" arrives as "Okay." and a
+ * dictated name as "Ramesh Patil." Trailing sentence punctuation must be removed before
+ * anything is compared or stored — otherwise confirmation silently fails and a full stop
+ * ends up on a government form.
+ * Devanagari danda (।) included; voice notes in Marathi transcribe with it.
+ */
+function stripTrailingPunctuation(s) {
+  return String(s).replace(/[.!?।॥,;:\s]+$/u, '').trim();
+}
+
 export function applyReviewReply(profile, raw) {
   const text = String(raw || '').trim();
   if (!text) return { action: 'unparsed' };
 
-  if (CONFIRM_WORDS.includes(text.toLowerCase())) return { action: 'confirm' };
+  const bare = stripTrailingPunctuation(text).toLowerCase();
+  if (CONFIRM_WORDS.includes(bare)) return { action: 'confirm' };
 
   // "3 Ramesh Shankar Patil"  ->  set field 3
   const m = text.match(/^(\d+)[.)\s:-]+(.+)$/s);
   if (!m) return { action: 'unparsed' };
 
   const index = Number(m[1]) - 1;
-  const value = m[2].trim();
+  const value = stripTrailingPunctuation(m[2]);
   const field = REVIEW_FIELDS[index];
   if (!field || !value) return { action: 'unparsed' };
 
   writePath(profile, field.path, value);
+  // A value the user typed outranks any machine transliteration, so it becomes the
+  // form value too. Otherwise they could "fix" a name and still submit the old spelling.
+  if (field.latinPath) writePath(profile, field.latinPath, value);
+
   return { action: 'corrected', field, value };
 }

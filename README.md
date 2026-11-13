@@ -1,5 +1,10 @@
 # PS 19 — AI Government Form & Document Verification Assistant
 
+> **New here? Read [HANDOFF.md](HANDOFF.md) first.** It holds the current state, every
+> known defect, the environment traps that cost hours, and what is still unproven.
+> `govtech_whatsapp_assistant_builder_agent_blueprint.md` is **superseded** — it was
+> written by an agent that overrode the team's architecture and invented requirements.
+
 WhatsApp bot. Citizen sends three documents, local AI reads them, the rulebook
 cross-checks them **against each other**, and a filled EWS form comes back as a PDF.
 
@@ -27,6 +32,47 @@ Run the whole pipeline end to end with mocked extraction:
 ```bash
 npm run dev
 curl -X POST http://localhost:3000/dev/run
+```
+
+## Web surface (ADR-5 fallback)
+
+```bash
+npm start
+```
+Then open http://localhost:3000 — upload three documents, watch validation, correct any
+field, download the form. Tick **Use demo fixtures** to run it with no photos and no model.
+
+This is pure transport: `src/web.js` calls the same extractor, rulebook and PDF generator
+as the WhatsApp path. It adds no rules of its own, and nothing here needs removing if the
+WhatsApp transport lands later.
+
+`POST /api/pdf` re-runs validation server-side, so the page cannot bypass the rulebook.
+
+## Voice (B10)
+
+Separate local service, same pattern as Ollama — keeps the model resident so Node never
+pays the load cost per request.
+
+```bash
+python -m pip install -r stt/requirements.txt
+python stt/server.py
+```
+
+**Use the requirements file, not `pip install faster-whisper`.** A plain install pulls
+PyAV 19, which breaks every transcription with `metadata_errors` — and the service still
+reports healthy, so you only find out on the first real voice note.
+
+First run downloads Whisper `small` (~500 MB). Then set `USE_MOCK_STT=false` in `.env`.
+
+It accepts WhatsApp's OGG/Opus **directly** — faster-whisper bundles PyAV, so no separate
+ffmpeg install is needed on Windows.
+
+Transcripts are routed through the same handler as typed text, so voice can never drift
+out of sync with chat. Spoken corrections ("name is Ramesh Patil") are mapped onto the
+numeric review protocol by keyword, not by an LLM — it has to behave identically every time.
+
+```bash
+node src/stt.test.js    # 16 tests, needs no audio and no model
 ```
 
 ## Who owns what

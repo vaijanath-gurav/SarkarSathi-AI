@@ -9,10 +9,19 @@ import { generateEWSForm } from './pdf.js';
 import { t } from './i18n/index.js';
 import { getSession, resetSession, alreadyProcessed, STAGES } from './session.js';
 import { buildReviewSummary, applyReviewReply } from './review.js';
+import { transcribe, voiceToReviewReply, sttHealthy } from './stt.js';
+import { web } from './web.js';
 import { sendText, sendDocument, sendLanguagePicker, downloadMedia } from './whatsapp.js';
 
 const app = express();
-app.use(express.json());
+// Document photos arrive base64-encoded from the web surface; the default 100kb limit
+// rejects any real phone photo.
+app.use(express.json({ limit: '25mb' }));
+app.use(web);
+// The web router only maps '/' to index.html. Everything else under public/ — the mock
+// portal, and anything added later — needs static serving. Mounted AFTER the router so
+// the explicit '/' route still wins.
+app.use(express.static('public'));
 
 app.get('/health', (_req, res) => res.json({ ok: true, mock: process.env.USE_MOCK !== 'false' }));
 
@@ -56,7 +65,7 @@ const NEXT_PROMPT = {
   [STAGES.PURPOSE]: 'ask_purpose',
 };
 
-async function handleMessage(message) {
+export async function handleMessage(message) {
   const from = message.from;
   const s = getSession(from);
 
@@ -73,38 +82,51 @@ async function handleMessage(message) {
   }
 
   if (message.type === 'text') {
-    const body = message.text.body.trim().toLowerCase();
+    await handleTextInput(from, s, message.text.body);
+    return;
+  }
 
-    if (['hi', 'hello', 'start', 'namaste'].includes(body)) {
-      resetSession(from);
-      await sendLanguagePicker(from);
+  // --- B10: voice notes. Transcribed locally, then handled exactly like text. ---
+  if (message.type === 'audio' || message.type === 'voice') {
+    const mediaId = message.audio?.id || message.voice?.id;
+
+    let buffer;
+    try {
+      buffer = await downloadMedia(mediaId);   // 5-minute expiry applies here too
+    } catch (err) {
+      console.error('[media/audio]', err);
+      await sendText(from, t(s.language, 'voice_failed'));
       return;
     }
 
-    if (s.stage === STAGES.PURPOSE) {
-      s.profile.purpose = message.text.body.trim();
-      await runValidation(from, s);
+    await sendText(from, t(s.language, 'listening'));
+
+    let result;
+    try {
+      result = await transcribe(buffer, s.language);
+    } catch (err) {
+      console.error('[stt]', err);
+      await sendText(from, t(s.language, 'voice_failed'));
       return;
     }
 
-    // B9 — review & correct. Every field is confirmed by the user before any PDF exists.
-    if (s.stage === STAGES.REVIEW) {
-      const r = applyReviewReply(s.profile, message.text.body);
-
-      if (r.action === 'confirm') {
-        await deliverForm(from, s);
-      } else if (r.action === 'corrected') {
-        await sendText(from, t(s.language, 'review_updated', {
-          label: t(s.language, r.field.label), value: r.value,
-        }));
-        await sendText(from, buildReviewSummary(s.profile, s.language));
-      } else {
-        await sendText(from, t(s.language, 'review_unparsed'));
-      }
+    if (!result.text) {
+      await sendText(from, t(s.language, 'voice_empty'));
       return;
     }
 
-    await sendText(from, t(s.language, NEXT_PROMPT[s.stage] || 'restart'));
+    // No language switching on detection: we force the session language on the way in,
+    // so whatever comes back merely echoes it. Auto-detect proved unusable on short
+    // Indic clips (a Marathi note was identified as Tagalog). The language button is
+    // the single source of truth.
+
+    // Spoken phrasing -> the numeric protocol the review stage already speaks.
+    const asText = s.stage === STAGES.REVIEW
+      ? voiceToReviewReply(result.text)
+      : result.text;
+
+    await sendText(from, t(s.language, 'heard', { text: result.text }));
+    await handleTextInput(from, s, asText);
     return;
   }
 
@@ -158,6 +180,46 @@ async function handleMessage(message) {
       await runValidation(from, s);
     }
   }
+}
+
+/**
+ * One path for typed text and transcribed speech, so voice can never drift out of
+ * sync with chat. B10 relies on this.
+ */
+async function handleTextInput(from, s, rawText) {
+  const text = String(rawText || '').trim();
+  const body = text.toLowerCase();
+
+  if (['hi', 'hello', 'start', 'namaste'].includes(body)) {
+    resetSession(from);
+    await sendLanguagePicker(from);
+    return;
+  }
+
+  if (s.stage === STAGES.PURPOSE) {
+    s.profile.purpose = text;
+    await runValidation(from, s);
+    return;
+  }
+
+  // B9 — review & correct. Every field is confirmed by the user before any PDF exists.
+  if (s.stage === STAGES.REVIEW) {
+    const r = applyReviewReply(s.profile, text);
+
+    if (r.action === 'confirm') {
+      await deliverForm(from, s);
+    } else if (r.action === 'corrected') {
+      await sendText(from, t(s.language, 'review_updated', {
+        label: t(s.language, r.field.label), value: r.value,
+      }));
+      await sendText(from, buildReviewSummary(s.profile, s.language));
+    } else {
+      await sendText(from, t(s.language, 'review_unparsed'));
+    }
+    return;
+  }
+
+  await sendText(from, t(s.language, NEXT_PROMPT[s.stage] || 'restart'));
 }
 
 /** Layer 2 + Layer 3: validate, report problems, or produce the form. */
@@ -217,9 +279,17 @@ app.post('/dev/run', async (_req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Only listen when run directly. Importing this module (e.g. from src/simulate.js)
+// must not bind a port.
+if (process.env.NO_LISTEN !== 'true') {
 app.listen(PORT, () => {
   const mock = process.env.USE_MOCK !== 'false';
   console.log(`\n  Server on http://localhost:${PORT}`);
   console.log(`  Extraction: ${mock ? 'MOCK (fixtures)' : `REAL (${process.env.VLM_MODEL})`}`);
   console.log(`  Try: curl -X POST http://localhost:${PORT}/dev/run\n`);
+
+  // D4: extract anything new in MASTER/ so client selection is instant later.
+  import('./clients.js').then((m) => m.warmAll()).catch((e) => console.error('[warm]', e.message));
 });
+}

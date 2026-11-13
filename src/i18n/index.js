@@ -2,12 +2,13 @@
 // Pre-written catalog, never runtime translation: instant, and it cannot hallucinate.
 
 import en from './en.json' with { type: 'json' };
+import hi from './hi.json' with { type: 'json' };
 import mr from './mr.json' with { type: 'json' };
 
-const CATALOGS = { en, mr };
+const CATALOGS = { en, hi, mr };
 
 /**
- * @param {'en'|'mr'} lang
+ * @param {'en'|'hi'|'mr'} lang
  * @param {string} key
  * @param {object} params  values interpolated into {placeholders}
  */

@@ -53,5 +53,31 @@ check('gibberish rejected', applyReviewReply(makeProfile(), 'hello there').actio
 check('empty rejected', applyReviewReply(makeProfile(), '').action === 'unparsed');
 check('number alone rejected', applyReviewReply(makeProfile(), '3').action === 'unparsed');
 
+console.log('\nBilingual display (ADR-8)');
+const bi = buildReviewSummary(makeProfile(), 'mr');
+check('shows the printed Devanagari name', bi.includes('रमेश शंकर पाटील'));
+check('also shows the Latin form going on the PDF', bi.includes('Ramesh Shankar Patil'));
+check('income shown once, not duplicated', (bi.match(/186000/g) || []).length === 1);
+
+const p5 = makeProfile();
+applyReviewReply(p5, '1 Ramesh S Patil');
+check('correction updates the printed field', p5.identity.full_name === 'Ramesh S Patil');
+check('correction ALSO updates the latin field', p5.identity.full_name_latin === 'Ramesh S Patil');
+
+console.log('\nWhisper punctuation (real transcripts)');
+// These are verbatim outputs from faster-whisper on synthesised speech.
+check('"Okay." confirms', applyReviewReply(makeProfile(), 'Okay.').action === 'confirm');
+check('"okay," confirms', applyReviewReply(makeProfile(), 'okay,').action === 'confirm');
+check('"होय।" confirms', applyReviewReply(makeProfile(), 'होय।').action === 'confirm');
+
+const p6 = makeProfile();
+applyReviewReply(p6, '1 Ramesh Padal.');
+check('trailing full stop stripped from the name', p6.identity.full_name === 'Ramesh Padal');
+check('latin field stripped too', p6.identity.full_name_latin === 'Ramesh Padal');
+
+const p7 = makeProfile();
+applyReviewReply(p7, '5 142/2B.');
+check('survey number keeps internal punctuation', p7.land.survey_number === '142/2B');
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

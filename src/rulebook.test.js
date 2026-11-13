@@ -59,5 +59,40 @@ const rich = validateEWS({
 }, NOW);
 check('over-ceiling income caught', rich.errors.some((e) => e.key === 'income_too_high'));
 
+console.log('\nCross-script matching (ADR-8)');
+// The real-world case: Aadhaar prints Latin, the 7/12 is Devanagari-only.
+check('transliteration variance tolerated (Patil vs Paatil)',
+  namesMatch('Ramesh Shankar Patil', 'Ramesh Shankar Paatil'));
+check('raw Devanagari vs Latin does NOT match without a latin variant',
+  !namesMatch('रमेश शंकर पाटील', 'Ramesh Shankar Patil'));
+
+const crossScript = validateEWS({
+  identity: load('identity'),   // full_name Devanagari, full_name_latin Roman
+  income: load('income'),
+  land: load('land'),           // owner_names Devanagari, owner_names_latin "Paatil"
+  purpose: 'School admission',
+}, NOW);
+check('cross-script profile passes via latin fields', crossScript.ok === true);
+
+// Guard the failure mode this was built to prevent: comparing printed forms directly
+// would score ~0% and falsely reject a legitimate applicant.
+const noLatin = validateEWS({
+  identity: { ...load('identity'), full_name_latin: undefined },
+  income: load('income'),
+  land: { ...load('land'), owner_names_latin: undefined },
+  purpose: 'School admission',
+}, NOW);
+check('missing latin fields fall back without crashing', Array.isArray(noLatin.errors));
+
+console.log('\nDEMO CASE still caught cross-script');
+const badCross = validateEWS({
+  identity: load('identity'), income: load('income'),
+  land: load('land_mismatch'), purpose: 'School admission',
+}, NOW);
+check('Pawar vs Patil caught in latin form',
+  badCross.errors.some((e) => e.key === 'name_mismatch'));
+check('error reports the printed Devanagari name',
+  badCross.errors.some((e) => String(e.params?.a).includes('रमेश')));
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -62,6 +62,22 @@ export function namesMatch(a, b, threshold = 0.75) {
   return true;
 }
 
+/**
+ * ADR-8: match on the Roman-script form so a Latin Aadhaar and a Devanagari 7/12
+ * compare meaningfully. Without this, cross-script documents score ~0% similarity
+ * and the rulebook falsely rejects a legitimate applicant.
+ * Falls back to the printed form when no Latin variant was extracted.
+ */
+export function matchName(obj, field) {
+  return obj?.[`${field}_latin`] || obj?.[field] || '';
+}
+
+export function matchNameList(obj, field) {
+  const latin = obj?.[`${field}_latin`];
+  if (Array.isArray(latin) && latin.length) return latin;
+  return Array.isArray(obj?.[field]) ? obj[field] : [];
+}
+
 export function monthsSince(dateStr, now = new Date()) {
   if (!dateStr || dateStr === 'NULL') return null;
   const d = new Date(dateStr);
@@ -94,19 +110,24 @@ export function validateEWS(profile, now = new Date()) {
   }
 
   // --- cross-document name match (the money shot on stage) ---
-  const owners = Array.isArray(land.owner_names) ? land.owner_names : [];
-  if (!owners.some((o) => namesMatch(identity.full_name, o))) {
+  // Compared in Roman script; reported in the script printed on the user's documents.
+  const idName = matchName(identity, 'full_name');
+  const owners = matchNameList(land, 'owner_names');
+  if (!owners.some((o) => namesMatch(idName, o))) {
     errors.push({
       key: 'name_mismatch',
-      params: { a: identity.full_name, b: owners[0] || '—' },
+      params: {
+        a: identity.full_name || idName,
+        b: (land.owner_names || [])[0] || owners[0] || '—',
+      },
     });
   }
 
   // --- identity vs income certificate ---
-  if (!namesMatch(identity.full_name, income.applicant_name)) {
+  if (!namesMatch(idName, matchName(income, 'applicant_name'))) {
     errors.push({
       key: 'income_name_mismatch',
-      params: { a: identity.full_name, b: income.applicant_name },
+      params: { a: identity.full_name || idName, b: income.applicant_name },
     });
   }
 

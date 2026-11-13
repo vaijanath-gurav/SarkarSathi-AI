@@ -7,7 +7,10 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test:rules": "node src/rulebook.test.js",
-    "test:pdf": "node src/pdf.test.js"
+    "test:pdf": "node src/pdf.test.js",
+    "test": "node src/rulebook.test.js && node src/review.test.js && node src/stt.test.js && node src/i18n.test.js && node src/simulate.test.js",
+    "sim": "node src/simulate.js",
+    "sim:mismatch": "node src/simulate.js mismatch"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
