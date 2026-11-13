@@ -404,9 +404,12 @@ web.post('/api/check-names', (req, res) => {
   const lang = LANGUAGES.includes(l) ? l : 'en';
   if (!Array.isArray(uploads)) return res.status(400).json({ error: 'uploads is required' });
   const r = resolveNames(uploads, form || {});
-  const msg = (e) => t(lang, e.key, e.key === 'form_name_suspect'
-    ? { ...e.params, docs: e.params.docs.map((d) => t(lang, d)).join(', ') }
-    : { ...e.params, d: t(lang, e.params.d) });
+  const msg = (e) => {
+    const p = e.params || {};
+    if (e.key === 'form_name_suspect') return t(lang, e.key, { ...p, docs: p.docs.map((d) => t(lang, d)).join(', ') });
+    if (e.key === 'name_conflict') return t(lang, e.key, { list: p.entries.map((x) => `${t(lang, x.d)}: ${x.a}`).join('; ') });
+    return t(lang, e.key, { ...p, d: t(lang, p.d) });
+  };
   const perDoc = {};
   for (const [k, list] of Object.entries(r.perDoc)) perDoc[k] = list.map(msg);
   res.json({ perDoc, notices: r.notices.map(msg) });

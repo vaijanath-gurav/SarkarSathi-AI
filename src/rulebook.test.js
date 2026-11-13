@@ -153,25 +153,35 @@ check('Devanagari form name compared with printed Devanagari name', checkAgainst
 check('empty form raises nothing', ['identity', 'income', 'land'].every((t) => checkAgainstForm(t, load(t), {}).length === 0));
 
 check('income naming several people matches ANY of them', checkAgainstForm('income', { applicant_name: 'Jaywant Janardhan Kasabale', applicant_name_latin: 'Jaywant Janardhan Kasabale', other_names_latin: ['Jitesh Jaywant Kasabale'] }, { name: 'Jitesh Jaywant Kasabale' }).length === 0);
-check('wrong form name: income + 7/12 agree with each other -> one notice, documents not blamed', (() => {
-  const r = resolveNames([{ key: 'a', docType: 'income', doc: load('income') }, { key: 'b', docType: 'land', doc: load('land') }], { name: 'Rmesh Pateel' });
+const U = (key, docType, doc) => ({ key, docType, doc });
+const RAM = 'Ramesh Shankar Patil';
+check('T1 wrong form name: income + 7/12 agree -> one form_name_suspect, documents not blamed', (() => {
+  const r = resolveNames([U('a', 'income', load('income')), U('b', 'land', load('land'))], { name: 'Rmesh Pateel' });
   return r.notices.length === 1 && r.notices[0].key === 'form_name_suspect' && Object.keys(r.perDoc).length === 0;
 })());
-check('odd document out is blamed, not the form', (() => {
-  const r = resolveNames([{ key: 'a', docType: 'identity', doc: load('identity') }, { key: 'b', docType: 'income', doc: { ...load('income'), ...kale } }], { name: 'Ramesh Shankar Patil' });
-  return Object.keys(r.perDoc).join() === 'b' && r.notices.length === 0;
+check('T2 1 vs 1 documents: tie -> name_conflict, form does not decide', (() => {
+  const r = resolveNames([U('a', 'identity', load('identity')), U('b', 'income', { ...load('income'), ...kale })], { name: RAM });
+  return r.notices.length === 1 && r.notices[0].key === 'name_conflict' && Object.keys(r.perDoc).length === 0;
 })());
-check('single mismatching document is blamed', (() => {
-  const r = resolveNames([{ key: 'b', docType: 'income', doc: { ...load('income'), ...kale } }], { name: 'Ramesh Shankar Patil' });
-  return Object.keys(r.perDoc).join() === 'b' && r.notices.length === 0;
+check('T3 single mismatching document -> name_conflict_single', (() => {
+  const r = resolveNames([U('b', 'income', { ...load('income'), ...kale })], { name: RAM });
+  return r.notices.length === 1 && r.notices[0].key === 'name_conflict_single' && Object.keys(r.perDoc).length === 0;
 })());
-check('7/12 compared with the land holder box', (() => {
-  const r = resolveNames([{ key: 'c', docType: 'land', doc: load('land') }], { name: 'Suresh Kale', landHolder: 'Ramesh Shankar Patil' });
-  return !('c' in r.perDoc) && r.notices.length === 0;
-})());
-check('empty form: resolveNames raises nothing', (() => {
-  const r = resolveNames([{ key: 'a', docType: 'identity', doc: load('identity') }, { key: 'b', docType: 'land', doc: load('land') }], {});
+check('T4 7/12 compared with the land holder box', (() => {
+  const r = resolveNames([U('c', 'land', load('land'))], { name: 'Suresh Kale', landHolder: RAM });
   return Object.keys(r.perDoc).length === 0 && r.notices.length === 0;
+})());
+check('T5 empty form: resolveNames raises nothing', (() => {
+  const r = resolveNames([U('a', 'identity', load('identity'))], {});
+  return Object.keys(r.perDoc).length === 0 && r.notices.length === 0;
+})());
+check('T6 form copied from the wrong Aadhaar: tie, neither blamed', (() => {
+  const r = resolveNames([U('a', 'identity', { ...load('identity'), full_name: 'Suresh Kale', full_name_latin: 'Suresh Kale' }), U('b', 'income', load('income'))], { name: 'Suresh Kale' });
+  return r.notices.length === 1 && r.notices[0].key === 'name_conflict' && Object.keys(r.perDoc).length === 0;
+})());
+check('T7 majority wins: only the odd income certificate is flagged', (() => {
+  const r = resolveNames([U('a', 'identity', load('identity')), U('b', 'land', load('land')), U('c', 'income', { ...load('income'), ...kale })], { name: RAM });
+  return Object.keys(r.perDoc).join() === 'c' && r.perDoc.c[0].key === 'name_odd_doc' && r.notices.length === 0;
 })());
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

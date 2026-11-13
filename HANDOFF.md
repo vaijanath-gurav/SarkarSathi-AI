@@ -18,13 +18,9 @@ checked against the form's NAME box, multi-name income/7/12, odd-one-out. **Noth
 (GitHub still at `16f4186`). Before pushing (this repo is the hackathon submission): decide with the
 user whether to untrack `handoff/memory/` (mentions the user's first name) and `.claude/launch.json`.
 
-**In flight at handoff — VERIFY FIRST:** a subagent was rewriting `resolveNames` in `src/rulebook.js`
-to the agreed rule: *the form never decides a dispute between documents; only documents vote; no
-verdict on a tie*. Expected: `npm test` → 59, 28, 16, 19, 13, 15, 5, 12 passed; i18n 90 keys each;
-new keys `name_conflict_single`, `name_odd_doc`, `name_conflict`. If `git status` shows these files
-modified and tests match, restart the server and run the user's cases through `POST /api/check-names`
-(form copied from a wrong Aadhaar + correct income → neutral `name_conflict`, neither blamed;
-2 docs agree vs form → `form_name_suspect`; 2 vs 1 → `name_odd_doc` on the odd one), then commit.
+**Name rule "documents vote, form never decides a tie" — DONE and verified live** (commit below):
+tie with the form copied from a wrong Aadhaar → neutral `name_conflict`, neither blamed; 2 vs 1 →
+`name_odd_doc` on the odd one. Tests: 59, 28, 16, 19, 13, 15, 5, 12 passed; i18n 90 keys each.
 
 **What the product IS (R9):** two independent features — voice/chat form filling (primary) and
 automated pre-submission OCR validation on upload. Fill-from-documents (Ctrl+Shift+F) is an extra.

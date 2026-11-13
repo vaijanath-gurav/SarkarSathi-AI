@@ -328,39 +328,51 @@ export function checkAgainstForm(docType, doc, form = {}) {
 
 /**
  * Batch name check across all uploads on one form. uploads = [{ key, docType, doc }].
- * If several documents all disagree with the form name yet agree with each other, the form's
- * NAME box is the likely culprit: one notice, documents not blamed. Otherwise each disagreeing
- * document is flagged.
+ * The NAME box may have been copied from the first uploaded document, so the form never decides
+ * a dispute between documents: only documents vote, and a tie gives no verdict.
  */
 export function resolveNames(uploads = [], form = {}) {
   const formName = String(form.name || '').trim();
   const landHolder = String(form.landHolder || '').trim();
-  const rows = [];
+  const perDoc = {};
+  const notices = [];
+  const clusters = [];
   for (const u of uploads) {
-    const usesHolder = u.docType === 'land' && landHolder;
-    const target = usesHolder ? landHolder : formName;
-    if (!target) continue;
-    const names = docNames(u.docType, u.doc, target);
-    if (!names.length) continue; // nothing readable to compare
-    const matches = names.some((n) => namesMatch(n, target));
-    rows.push({ u, names, target, matches, usesHolder });
+    if (u.docType === 'land' && landHolder) {
+      const ln = docNames('land', u.doc, landHolder);
+      if (ln.length && !ln.some((n) => namesMatch(n, landHolder))) {
+        notices.push({ key: 'name_conflict_single', params: { d: `doc_${u.docType}`, a: ln[0], b: landHolder } });
+      }
+      continue;
+    }
+    const names = docNames(u.docType, u.doc, formName);
+    if (!names.length) continue;
+    const m = { u, names };
+    const c = clusters.find((cl) => cl.names.some((a) => names.some((b) => namesMatch(a, b))));
+    if (c) { c.members.push(m); c.names.push(...names); }
+    else clusters.push({ members: [m], names: [...names], display: names[0] });
   }
-  const againstName = rows.filter((r) => !r.usesHolder);
-  const mismatched = againstName.filter((r) => !r.matches);
-  const matched = againstName.filter((r) => r.matches);
-  if (formName && mismatched.length >= 2 && matched.length === 0) {
-    const first = mismatched[0];
-    const shared = mismatched.every((r) => r === first || first.names.some((a) => r.names.some((b) => namesMatch(a, b))));
-    if (shared) {
-      return {
-        perDoc: {},
-        notices: [{ key: 'form_name_suspect', params: { docs: mismatched.map((r) => `doc_${r.u.docType}`), a: first.names[0], b: formName } }],
-      };
+  const suspect = (c) => ({ key: 'form_name_suspect', params: { docs: c.members.map((m) => `doc_${m.u.docType}`), a: c.display, b: formName } });
+  const formMatches = (c) => c.names.some((n) => namesMatch(n, formName));
+  if (clusters.length === 1) {
+    const c = clusters[0];
+    if (formName && !formMatches(c)) {
+      if (c.members.length >= 2) notices.push(suspect(c));
+      else notices.push({ key: 'name_conflict_single', params: { d: `doc_${c.members[0].u.docType}`, a: c.members[0].names[0], b: formName } });
+    }
+  } else if (clusters.length >= 2) {
+    const sorted = [...clusters].sort((x, y) => y.members.length - x.members.length);
+    const [big, second] = sorted;
+    if (big.members.length > second.members.length) {
+      for (const c of sorted.slice(1)) {
+        for (const m of c.members) {
+          perDoc[m.u.key] = [{ key: 'name_odd_doc', params: { d: `doc_${m.u.docType}`, a: m.names[0], b: big.display } }];
+        }
+      }
+      if (formName && !formMatches(big)) notices.push(suspect(big));
+    } else {
+      notices.push({ key: 'name_conflict', params: { entries: clusters.flatMap((c) => c.members).map((m) => ({ d: `doc_${m.u.docType}`, a: m.names[0] })) } });
     }
   }
-  const perDoc = {};
-  for (const r of rows) {
-    if (!r.matches) perDoc[r.u.key] = [{ key: 'form_name_mismatch', params: { d: `doc_${r.u.docType}`, a: r.names[0], b: r.target } }];
-  }
-  return { perDoc, notices: [] };
+  return { perDoc, notices };
 }
