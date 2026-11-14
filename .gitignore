@@ -7,3 +7,8 @@ handoff/transcript/
 CLAUDE.local.md
 keys/
 data/
+
+# Local-only files (kept on disk, not part of the submission)
+handoff/memory/
+.claude/launch.json
+DESIGN.md
