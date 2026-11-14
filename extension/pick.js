@@ -78,19 +78,39 @@
       const padded = ` ${src} `;
       const hits = real.filter((o) => padded.includes(` ${norm(o.text)} `));
       if (!hits.length) {
-        // Devanagari source against Latin options: transliterate and fuzzy-match.
         const dev = /[ऀ-ॿ]/;
-        if (!dev.test(spec.source) || !real.some((o) => !dev.test(o.text))) return null;
-        const srcTokens = latinKey(translit(spec.source)).split(' ').filter(Boolean);
-        if (!srcTokens.length) return null;
-        const scored = [];
-        for (const o of real) {
-          if (dev.test(o.text)) continue;
-          const toks = latinKey(o.text).split(' ').filter(Boolean);
-          if (!toks.length) continue;
-          const score = Math.min(...toks.map((t) => Math.max(...srcTokens.map((s) => sim(t, s)))));
-          if (score >= 0.75) scored.push({ o, score });
-        }
+        const score = (srcTokens, optTokens) => Math.min(...optTokens.map((t) => Math.max(...srcTokens.map((x) => sim(t, x)))));
+        let scored = [];
+        if (dev.test(spec.source) && real.some((o) => !dev.test(o.text))) {
+          // Devanagari source against Latin options: transliterate and fuzzy-match.
+          const srcTokens = latinKey(translit(spec.source)).split(' ').filter(Boolean);
+          if (!srcTokens.length) return null;
+          for (const o of real) {
+            if (dev.test(o.text)) continue;
+            const toks = latinKey(o.text).split(' ').filter(Boolean);
+            if (!toks.length) continue;
+            const sc = score(srcTokens, toks);
+            if (sc >= 0.75) scored.push({ o, score: sc });
+          }
+        } else if (!dev.test(spec.source) && real.some((o) => dev.test(o.text))) {
+          // Mirror case: Latin source against Devanagari options.
+          const srcTokens = latinKey(spec.source).split(' ').filter(Boolean);
+          if (!srcTokens.length) return null;
+          for (const o of real) {
+            if (!dev.test(o.text)) continue;
+            const toks = latinKey(translit(o.text)).split(' ').filter(Boolean);
+            if (!toks.length) continue;
+            const sc = score(srcTokens, toks);
+            if (sc >= 0.75) scored.push({ o, score: sc, n: toks.length });
+          }
+          // Equal scores: the option with more matched words wins ("Vadgaon Sheri" over "Vadgaon").
+          const top = Math.max(0, ...scored.map((x) => x.score));
+          const tied = scored.filter((x) => x.score === top);
+          if (tied.length > 1) {
+            const most = Math.max(...tied.map((x) => x.n));
+            scored = scored.filter((x) => x.score < top || x.n === most);
+          }
+        } else return null;
         scored.sort((a, b) => b.score - a.score);
         if (!scored.length) return null;
         if (scored.length > 1 && !(scored[0].score > scored[1].score)) return null;
@@ -106,5 +126,39 @@
     return null;
   }
 
-  root.__govtechPick = { pickOption, translit };
+  // Spoken/typed gender words -> the Marathi list text.
+  const GENDER_SYN = {
+    'पुरुष': ['male', 'm', 'purush', 'पुरुष'],
+    'स्त्री': ['female', 'f', 'stree', 'stri', 'mahila', 'स्त्री', 'महिला'],
+    'इतर': ['other', 't', 'itar', 'इतर', 'तृतीयपंथी'],
+  };
+
+  /**
+   * Resolve a wanted item against OUR stored list (code -> Marathi text), never the page's text.
+   * @param {Array<{value:string,text:string}>} list
+   * @param {{mode:'oneOf',candidates:string[],gender?:boolean}|{mode:'within',source:string}} spec
+   * @returns {{code:string,fuzzy:boolean}|null}
+   */
+  function resolveCode(list, spec) {
+    let code = null;
+    let fuzzy = false;
+    if (spec.mode === 'oneOf') {
+      let cands = spec.candidates || [];
+      if (spec.gender === true) {
+        const extra = [];
+        for (const c of cands) {
+          const n = norm(c);
+          for (const [text, syns] of Object.entries(GENDER_SYN)) if (syns.some((x) => norm(x) === n)) extra.push(text);
+        }
+        cands = cands.concat(extra);
+      }
+      code = pickOption(list, { mode: 'oneOf', candidates: cands });
+    } else if (spec.mode === 'within') {
+      code = pickOption(list, spec);
+      fuzzy = !!pickOption.lastFuzzy;
+    }
+    return code ? { code, fuzzy } : null;
+  }
+
+  root.__govtechPick = { pickOption, translit, resolveCode, GENDER_SYN };
 })(globalThis);

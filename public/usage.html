@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage by CSC</title>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 24px; color: #111; background: #fff; }
+  h1 { font-size: 20px; }
+  table { border-collapse: collapse; margin-top: 16px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+  th { background: #f3f3f3; }
+  td.n { text-align: right; }
+  #msg { margin-top: 12px; color: #b00020; }
+</style>
+</head>
+<body>
+<h1>Usage by CSC</h1>
+<label>Admin key <input id="admin" type="password" autocomplete="off"></label>
+<button id="show">Show</button>
+<div id="msg"></div>
+<div id="out"></div>
+<script>
+  const TYPES = ['document', 'names', 'validation', 'voice', 'convert', 'fill'];
+  const cell = (tr, text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); };
+  document.getElementById('show').onclick = async () => {
+    const msg = document.getElementById('msg');
+    const out = document.getElementById('out');
+    msg.textContent = '';
+    out.textContent = '';
+    let res;
+    try {
+      res = await fetch('/api/usage', { headers: { 'X-Admin-Key': document.getElementById('admin').value } });
+    } catch (e) { msg.textContent = 'Server not reachable'; return; }
+    if (res.status === 401) { msg.textContent = 'Wrong admin key'; return; }
+    if (res.status === 503) { msg.textContent = 'ADMIN_KEY is not set on the server'; return; }
+    if (!res.ok) { msg.textContent = 'Error ' + res.status; return; }
+    const data = await res.json();
+    const table = document.createElement('table');
+    const head = document.createElement('tr');
+    for (const h of ['CSC name', 'key', 'date', ...TYPES, 'total']) { const th = document.createElement('th'); th.textContent = h; head.appendChild(th); }
+    table.appendChild(head);
+    for (const r of data.rows || []) {
+      const tr = document.createElement('tr');
+      cell(tr, r.name);
+      cell(tr, r.key.slice(0, 8) + '…');
+      cell(tr, r.date);
+      for (const t of TYPES) cell(tr, String(r.counts[t] || 0), 'n');
+      cell(tr, String(r.total), 'n');
+      table.appendChild(tr);
+    }
+    out.appendChild(table);
+  };
+</script>
+</body>
+</html>

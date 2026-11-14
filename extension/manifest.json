@@ -5,6 +5,7 @@
   "description": "Validates documents and fills government forms from verified records. Never submits.",
   "permissions": ["activeTab", "scripting", "storage", "offscreen"],
   "host_permissions": ["http://localhost:3000/*", "<all_urls>"],
+  "options_ui": { "page": "options.html", "open_in_tab": true },
   "background": { "service_worker": "background.js" },
   "content_scripts": [{ "matches": ["<all_urls>"], "js": ["pick.js", "content.js"], "run_at": "document_idle" }],
   "commands": {

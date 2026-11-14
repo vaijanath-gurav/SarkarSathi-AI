@@ -36,6 +36,7 @@
   "panel_verify_field": "Check this spelling against the document — it may not be printed in this script.",
   "pop_not_curated": "This form is not set up in the assistant yet, so nothing was filled automatically. Fill it by voice or typing: click a field and press Alt+Shift+V.",
   "pop_not_a_name": "Didn't catch a name — say it again, or type it.",
+  "pop_api_key": "No valid API key. Ask your administrator, then set it in the extension's Options.",
   "form_name_mismatch": "Problem found: the name on this {d} ({a}) does not match the name on the form ({b}). Check the document or the name typed on the form.",
   "form_name_suspect": "The {docs} all say {a}, but the form says {b} — the name on the form is probably wrong. Correct the name on the form.",
   "name_conflict_single": "The {d} says {a}, but the form says {b} — one of them is wrong. Check against the citizen's original document.",

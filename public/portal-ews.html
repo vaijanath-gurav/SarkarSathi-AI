@@ -82,28 +82,25 @@
   // Dependent dropdowns, as on the real portal: the next list loads only after a change.
   // The delay imitates the portal's server round trip. Codes for districts are the real ones.
   var DISTRICTS = [['521', 'पुणे'], ['523', 'बीड'], ['524', 'लातूर'], ['527', 'सातारा'], ['528', 'रत्नागिरी']];
-  var TALUKAS = {
-    '521': [['4101', 'हवेली'], ['4102', 'मुळशी'], ['4103', 'मावळ'], ['4104', 'पुणे शहर'], ['4105', 'बारामती']],
-    '527': [['4201', 'सातारा'], ['4202', 'कराड']]
-  };
-  var VILLAGES = {
-    '4101': [['410101', 'वडगाव'], ['410102', 'वडगाव शेरी'], ['410103', 'खडकवासला'], ['410104', 'लोणी काळभोर']],
-    '4102': [['410201', 'पौड']],
-    '4202': [['420201', 'मलकापूर']]
-  };
   function fill(sel, rows) {
     sel.innerHTML = '<option value="">---निवडा---</option>';
     rows.forEach(function (r) { var o = document.createElement('option'); o.value = r[0]; o.textContent = r[1]; sel.appendChild(o); });
   }
   document.querySelectorAll('select.district').forEach(function (s) { fill(s, DISTRICTS); });
+  // Same endpoints and JSON shape ([{Value, Text}]) as the real portal.
+  function loadList(url, sel) {
+    fetch(url).then(function (r) { return r.json(); }).then(function (rows) {
+      fill(sel, rows.map(function (x) { return [x.Value, x.Text]; }));
+    }).catch(function () { fill(sel, []); });
+  }
   var land = { d: document.getElementById('ddlland_dist_Value'), t: document.getElementById('ddlland_subdist_Value'), v: document.getElementById('ddlland_vill_Value') };
   land.d.addEventListener('change', function () {
     fill(land.t, []); fill(land.v, []);
-    setTimeout(function () { fill(land.t, TALUKAS[land.d.value] || []); }, 400);
+    loadList('/en/StateGovEWS/District_SelectedState?strLang=2&Sel_DistrictName=' + encodeURIComponent(land.d.value), land.t);
   });
   land.t.addEventListener('change', function () {
     fill(land.v, []);
-    setTimeout(function () { fill(land.v, VILLAGES[land.t.value] || []); }, 400);
+    loadList('/en/StateGovEWS/Taluka_SelectedState?strLang=2&Sel_TalukaName=' + encodeURIComponent(land.t.value), land.v);
   });
   document.querySelectorAll('input.inc').forEach(function (i) {
     i.addEventListener('input', function () {

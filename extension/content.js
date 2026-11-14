@@ -58,6 +58,9 @@
   const body = $('body');
   const status = (msg, cls) => { const s = $('status'); s.textContent = msg; s.className = cls || ''; };
   const T = (k) => STR[k] || '';
+  // A rejected API key gets its own message instead of the generic failure text.
+  const keyBad = (r) => !!r && (r.error === 'api_key_missing' || r.error === 'api_key_invalid');
+  const apiErr = (r, fallback) => (keyBad(r) ? T('pop_api_key') : fallback);
 
   // ---- pop-up shell -------------------------------------------------------
   let isOpen = false;
@@ -127,7 +130,7 @@
     none.value = '';
     none.textContent = '—';
     sel.appendChild(none);
-    if (!Array.isArray(r)) { status(T('panel_no_service'), 'err'); return false; }
+    if (!Array.isArray(r)) { status(keyBad(r) ? T('pop_api_key') : T('panel_no_service'), 'err'); return false; }
     for (const c of r) {
       const o = document.createElement('option');
       o.value = c.name;
@@ -200,6 +203,36 @@
     return '';
   }
 
+  // Resolve a select we hold a stored list for (mrLookup) to an option CODE. Never uses the page's
+  // visible text (it may be translated). state: 'found' | 'none' | 'fallback' (no stored code is
+  // on this page at all, so the caller may use visible text).
+  async function storedList(el, lookup, lists) {
+    if (lookup.static) {
+      const m = lists[lookup.static];
+      return m ? Object.entries(m).map(([value, text]) => ({ value, text })) : null;
+    }
+    if (lookup.url) {
+      const parent = document.getElementById(lookup.parent);
+      if (!parent || !parent.value) return null;
+      try {
+        const res = await fetch(location.origin + lookup.url + '?' +
+          new URLSearchParams({ [lookup.param]: parent.value, strLang: '2' }), { credentials: 'same-origin' });
+        const data = res.ok ? await res.json() : null;
+        return Array.isArray(data) ? data.map((o) => ({ value: String(o.Value), text: String(o.Text) })) : null;
+      } catch (_) { return null; }
+    }
+    return null;
+  }
+  async function resolveByCode(el, lookup, lists, spec) {
+    const list = await storedList(el, lookup, lists);
+    if (!list) return { state: 'none' };
+    const have = new Set([...el.options].map((o) => o.value));
+    if (list.length && !list.some((o) => have.has(o.value))) return { state: 'fallback' };
+    const hit = window.__govtechPick.resolveCode(list, spec);
+    if (hit && have.has(hit.code)) return { state: 'found', value: hit.code, fuzzy: hit.fuzzy };
+    return { state: 'none' };
+  }
+
   // ---- FILL ---------------------------------------------------------------
   async function runFill() {
     await ensureReady();
@@ -213,7 +246,7 @@
     const renderValidation = async () => {
       const v = await api('GET', `/api/clients/${encodeURIComponent(key)}/validate?lang=${LANG}`);
       if (popSeq !== seq) return null;
-      if (v.error) { status(v.error, 'err'); return null; }
+      if (v.error) { status(apiErr(v, v.error), 'err'); return null; }
       for (const d of valLines) d.remove();
       valLines = [];
       let probs = false;
@@ -239,7 +272,7 @@
       return { ref, label: labelFor(el), name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', type: el.type || '' };
     });
     const r = await api('POST', '/api/fill', { client: key, url: location.href, fields });
-    if (r.error || !r.values) return status(r.error || T('panel_fill_failed'), 'err');
+    if (r.error || !r.values) return status(apiErr(r, r.error || T('panel_fill_failed')), 'err');
     // A13 (R5): curated forms only.
     if (r.curated === false) return status(T('pop_not_curated'), 'warn');
     for (const [ref, value] of Object.entries(r.values)) {
@@ -274,11 +307,13 @@
       el.title = T('panel_verify_field');
       toCheck++;
     }
-    // Phase 10: dropdowns, chosen by visible text. A later dropdown in a chain loads only
-    // after the earlier one changes, so wait for its options to change (max 5 s).
+    // Phase 10: dropdowns. Selects we hold a stored list for are resolved by CODE (page text may be
+    // machine-translated); the rest by visible text. A later dropdown in a chain loads only
+    // after the earlier one changes, so wait for its option VALUES to change (max 5 s).
     // If one link fails, the rest of that chain is left for the operator.
-    const snap = (el) => [...el.options].map((o) => o.text).join('|');
+    const snap = (el) => [...el.options].map((o) => o.value).join('|');
     const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const lists = { ...(r.districtsMr ? { districtsMr: r.districtsMr } : {}), ...(r.lists || {}) };
     let picked = 0;
     for (const chain of r.chains || []) {
       let broken = false;
@@ -286,9 +321,24 @@
         const el = document.getElementById(chain[i].id);
         if (!el || el.tagName !== 'SELECT') { broken = true; continue; }
         if (broken) { el.style.outline = '3px solid #e69500'; continue; }
-        const value = window.__govtechPick.pickOption(
-          [...el.options].map((o) => ({ value: o.value, text: o.text })), chain[i]);
-        const fuzzy = window.__govtechPick.pickOption.lastFuzzy;
+        const spec = chain[i];
+        let value = null;
+        let fuzzy = false;
+        const lookup = r.mrLookup && r.mrLookup[el.id];
+        let byText = !lookup;
+        if (lookup) {
+          const res = await resolveByCode(el, lookup, lists, spec);
+          if (res.state === 'fallback') byText = true;
+          else if (res.state === 'found') { value = res.value; fuzzy = res.fuzzy; }
+        }
+        if (byText) {
+          value = window.__govtechPick.pickOption(
+            [...el.options].map((o) => ({ value: o.value, text: o.text })), spec);
+          fuzzy = window.__govtechPick.pickOption.lastFuzzy;
+        }
+        if (value == null) {
+          console.warn(`[govtech] no match for #${el.id}: source="${spec.source || (spec.candidates || []).join('/')}", first options=${JSON.stringify([...el.options].slice(0, 5).map((o) => o.text))}`);
+        }
         if (value == null) { el.style.outline = '3px solid #e69500'; broken = true; continue; }
         el.style.outline = fuzzy ? '3px dashed #e69500' : '2px solid #0a7d2c';
         if (fuzzy) { el.title = T('panel_verify_field'); toCheck++; }
@@ -376,16 +426,35 @@
     brow.append(rec, ' ', ins);
     body.appendChild(brow);
 
-    const doInsert = () => {
+    const ffReady = loadFormFields().catch(() => { /* no service: selects fall back to visible text */ });
+    const doInsert = async () => {
       const text = ta.value;
+      await ffReady;
       if (target.tagName === 'SELECT') {
         const options = [...target.options].map((o) => ({ value: o.value, text: o.text }));
-        let value = window.__govtechPick.pickOption(options, { mode: 'oneOf', candidates: [text] });
-        if (value == null) value = window.__govtechPick.pickOption(options, { mode: 'within', source: text });
+        const lookup = formFields && formFields.mrLookup && formFields.mrLookup[target.id];
+        let value = null;
+        let fuzzy = false;
+        let byText = !lookup;
+        if (lookup) {
+          const gender = lookup.static === 'genderMr';
+          const list = await storedList(target, lookup, formFields.lists || {});
+          const have = new Set(options.map((o) => o.value));
+          if (list && list.length && !list.some((o) => have.has(o.value))) byText = true;
+          else if (list) {
+            let hit = window.__govtechPick.resolveCode(list, { mode: 'oneOf', candidates: [text], gender });
+            if (!hit && !gender) hit = window.__govtechPick.resolveCode(list, { mode: 'within', source: text });
+            if (hit && have.has(hit.code)) { value = hit.code; fuzzy = hit.fuzzy; }
+          }
+        }
+        if (byText) {
+          value = window.__govtechPick.pickOption(options, { mode: 'oneOf', candidates: [text] });
+          if (value == null) value = window.__govtechPick.pickOption(options, { mode: 'within', source: text });
+        }
         if (value == null) return status(T('pop_no_option'), 'err');
         target.value = value;
         target.dispatchEvent(new Event('change', { bubbles: true }));
-        target.style.outline = '2px solid #0a7d2c';
+        target.style.outline = fuzzy ? '3px dashed #e69500' : '2px solid #0a7d2c';
       } else {
         target.value = text;
         target.dispatchEvent(new Event('input', { bubbles: true }));
@@ -418,7 +487,7 @@
           const r = await api('POST', '/api/stt', { audioBase64: dataUrl, lang: LANG, client: $('client').value || '', field: labelFor(target) });
           if (r.ok && r.rejected === 'not_a_name') { ta.value = ''; ta.focus(); status(T('pop_not_a_name'), 'err'); }
           else if (r.ok && r.text) { ta.value = r.text; ta.focus(); status(''); }
-          else status(T('voice_empty'), 'err');
+          else status(apiErr(r, T('voice_empty')), 'err');
         };
         recorder.start();
         rec.dataset.k = 'panel_stop';
@@ -507,7 +576,7 @@
           if (fmt === 'pdf') {
             const jpg = await toBlob(c, 'image/jpeg', 0.92);
             const r = await api('POST', '/api/to-pdf', { imageBase64: await readDataUrl(jpg), mime: 'image/jpeg' }, true);
-            if (!r.ok || !r.base64) return status(T('panel_pdf_failed'), 'err');
+            if (!r.ok || !r.base64) return status(apiErr(r, T('panel_pdf_failed')), 'err');
             save(dataUrlToBlob('data:application/pdf;base64,' + r.base64), `${base}.pdf`);
           } else {
             const blob = await toBlob(c, fmt, 0.92);
@@ -621,7 +690,7 @@
   async function loadFormFields() {
     if (formFields) return;
     const r = await api('GET', '/api/form-fields?url=' + encodeURIComponent(location.href));
-    formFields = { nameFields: r.nameFields || [], landHolderFields: r.landHolderFields || [] };
+    formFields = { nameFields: r.nameFields || [], landHolderFields: r.landHolderFields || [], mrLookup: r.mrLookup || {}, lists: r.lists || {} };
   }
   const firstValue = (sels) => {
     for (const sel of sels) {
@@ -652,6 +721,7 @@
     const list = Object.entries(uploads).map(([key, u]) => ({ key, docType: u.docType, doc: u.doc }));
     if (!list.length) return false;
     const r = await api('POST', '/api/check-names', { uploads: list, form: readForm(), lang: LANG });
+    if (keyBad(r)) { line(T('pop_api_key'), 'err'); return true; }
     if (!r || r.error) return false;
     let problems = false;
     for (const [key, u] of Object.entries(uploads)) {
@@ -729,7 +799,7 @@
     brow.append(cv, ' ', cp);
     body.appendChild(brow);
 
-    if (r.error) status(r.error, 'err');
+    if (r.error) status(apiErr(r, r.error), 'err');
     else status('');
     if (r.ok && !formatBad && !nameProblems) autoClose(8000);
   }, true);

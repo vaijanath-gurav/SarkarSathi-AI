@@ -6,7 +6,10 @@ import vm from 'node:vm';
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('extension/pick.js', 'utf8'), ctx);
-const { pickOption, translit } =ctx.__govtechPick;
+const { pickOption, translit, resolveCode } = ctx.__govtechPick;
+const L = (rows) => rows.map(([value, text]) => ({ value, text }));
+const demo = JSON.parse(fs.readFileSync('forms/demo-portal-lists.json', 'utf8'));
+const form = JSON.parse(fs.readFileSync('forms/mahaonline-ews.json', 'utf8'));
 
 let pass = 0, fail = 0;
 const check = (n, c) => { if (c) { pass++; console.log(`  PASS  ${n}`); } else { fail++; console.log(`  FAIL  ${n}`); } };
@@ -40,6 +43,23 @@ check('English page: MALE -> M',
   pickOption(O([['g1', 'M'], ['g2', 'F'], ['g3', 'T']]), { mode: 'oneOf', candidates: ['M', 'Male', 'पुरुष'] }) === 'g1');
 check('Marathi page: FEMALE -> स्त्री',
   pickOption(O([['m1', 'पुरुष'], ['m2', 'स्त्री'], ['m3', 'इतर']]), { mode: 'oneOf', candidates: ['F', 'Female', 'स्त्री', 'महिला'] }) === 'm2');
+
+console.log('\nresolveCode against OUR stored lists');
+const distList = L([['521', 'पुणे'], ['523', 'बीड'], ['527', 'सातारा']]);
+check('district: within "हवेली पुणे" -> 521', resolveCode(distList, { mode: 'within', source: 'हवेली पुणे' })?.code === '521');
+const pune = resolveCode(distList, { mode: 'within', source: 'Pune' });
+check('Latin Pune vs Devanagari list -> 521, fuzzy', pune?.code === '521' && pune.fuzzy === true);
+check('Latin Haveli vs talukas of 521 -> 4101 fuzzy', (() => { const h = resolveCode(L(demo.talukas['521']), { mode: 'within', source: 'Haveli' }); return h?.code === '4101' && h.fuzzy; })());
+check('Latin Vadgaon Sheri vs villages of 4101 -> 410102', resolveCode(L(demo.villages['4101']), { mode: 'within', source: 'Vadgaon Sheri' })?.code === '410102');
+const gl = L(Object.entries(form.genderMr));
+const M = '11d79d04-3bcf-4389-9466-7e4ac80a5f5d', F = '3665f1da-cdc8-4443-8649-c70563ec758f';
+const G = (t) => resolveCode(gl, { mode: 'oneOf', candidates: [t], gender: true })?.code ?? null;
+check('gender male/Male/पुरुष/purush -> पुरुष code', ['male', 'Male', 'पुरुष', 'purush'].every((t) => G(t) === M));
+check('gender mahila -> स्त्री code', G('mahila') === F);
+check('gender xyz -> null', G('xyz') === null);
+const pageEn = L([['521', 'Pune'], ['523', 'Beed']]);
+const tr = resolveCode(L(Object.entries(form.districtsMr)), { mode: 'within', source: 'पुणे' });
+check('translated page (same codes, English text): our list gives 521 and the page has it', tr?.code === '521' && pageEn.some((o) => o.value === tr.code));
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1,6 +1,7 @@
 // D13: all network calls go through this service worker. Phase 14: one command per feature
 // (R7); PDF work is relayed to an offscreen document running pdf.js (R3).
-const BASE = 'http://localhost:3000';
+const DEFAULT_URL = 'http://localhost:3000';
+const settings = () => chrome.storage.local.get({ serverUrl: DEFAULT_URL, apiKey: '' });
 
 const FEATURE = {
   'fill-form': 'FILL',
@@ -48,11 +49,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const { method, path, body, binary } = msg;
   (async () => {
     try {
-      const res = await fetch(BASE + path, {
+      const { serverUrl, apiKey } = await settings();
+      const headers = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      if (apiKey) headers['X-Api-Key'] = apiKey;
+      const res = await fetch(String(serverUrl || DEFAULT_URL).replace(/\/+$/, '') + path, {
         method: method || 'GET',
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers,
         body: body ? JSON.stringify(body) : undefined,
       });
+      if (binary && res.status === 401) { sendResponse(await res.json()); return; }
       if (binary) {
         const buf = new Uint8Array(await res.arrayBuffer());
         let s = '';

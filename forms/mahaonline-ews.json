@@ -37,5 +37,65 @@
     "#txt_IncomeFromAgriCulture": "income.certified_annual_income",
     "#txt_IncomeFromInvestment": "income.certified_annual_income",
     "#txt_IncomeFromOthers": "income.certified_annual_income"
+  },
+  "districtsMr": {
+    "497": "नंदुरबार",
+    "498": "धुळे",
+    "499": "जळगाव",
+    "500": "बुलडाणा",
+    "501": "अकोला",
+    "502": "वाशिम",
+    "503": "अमरावती",
+    "504": "वर्धा",
+    "505": "नागपूर",
+    "506": "भंडारा",
+    "507": "गोंदिया",
+    "508": "गडचिरोली",
+    "509": "चंद्रपूर",
+    "510": "यवतमाळ",
+    "511": "नांदेड",
+    "512": "हिंगोली",
+    "513": "परभणी",
+    "514": "जालना",
+    "515": "छत्रपती संभाजीनगर",
+    "516": "नाशिक",
+    "517": "ठाणे",
+    "518": "मुंबई उपनगर",
+    "519": "मुंबई शहर",
+    "520": "रायगड",
+    "521": "पुणे",
+    "522": "अहिल्याानगर",
+    "523": "बीड",
+    "524": "लातूर",
+    "525": "धाराशिव",
+    "526": "सोलापूर",
+    "527": "सातारा",
+    "528": "रत्नागिरी",
+    "529": "सिंधुदुर्ग",
+    "530": "कोल्हापूर",
+    "531": "सांगली",
+    "990": "पालघर"
+  },
+  "genderMr": { "11d79d04-3bcf-4389-9466-7e4ac80a5f5d": "पुरुष", "3665f1da-cdc8-4443-8649-c70563ec758f": "स्त्री", "4738a78e-a3b7-4e4d-8707-2545e49a9bfc": "इतर" },
+  "mrLookup": {
+    "ddl_RelationGender_Value": {
+      "static": "genderMr"
+    },
+    "Address_DistrictCode": {
+      "static": "districtsMr"
+    },
+    "ddlland_dist_Value": {
+      "static": "districtsMr"
+    },
+    "ddlland_subdist_Value": {
+      "url": "/en/StateGovEWS/District_SelectedState",
+      "param": "Sel_DistrictName",
+      "parent": "ddlland_dist_Value"
+    },
+    "ddlland_vill_Value": {
+      "url": "/en/StateGovEWS/Taluka_SelectedState",
+      "param": "Sel_TalukaName",
+      "parent": "ddlland_subdist_Value"
+    }
   }
 }

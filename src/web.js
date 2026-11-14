@@ -8,6 +8,7 @@
 
 import express from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
 
 import { extractDocument } from './extractor.js';
 import { validateEWS, validateDocument, toAsciiDigits, resolveNames } from './rulebook.js';
@@ -16,19 +17,69 @@ import { t } from './i18n/index.js';
 import { REVIEW_FIELDS } from './review.js';
 import { listClients, getProfile, warmAll, setOverride } from './clients.js';
 import { LANGUAGES } from './i18n/index.js';
+import { lookupKey, count as countUsage, usage } from './keys.js';
 import { matchFields, operatorRefs, selectChains, hintRefs, verifyRefs, findCurated } from './fieldmap.js';
 
 export const web = express.Router();
 
-// D14: the extension's service worker calls these routes from a different origin.
-// The service binds localhost only, so a permissive header is appropriate here.
+// CORS: only the extension's service worker (a chrome-extension:// origin) is allowed in.
+// Same-origin pages (the demo portal, the usage page) need no CORS headers at all.
 web.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  const origin = req.headers.origin;
+  if (typeof origin === 'string' && origin.startsWith('chrome-extension://')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Vary', 'Origin');
+  }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// API keys: paid actions need X-Api-Key and are counted per key per day (2xx responses only).
+// [method, path pattern, usage type]; type null = key required but not counted (citizen data).
+const KEYED = [
+  ['POST', /^\/api\/check-upload$/, 'document'],
+  ['POST', /^\/api\/extract$/, 'document'],
+  ['POST', /^\/api\/check-names$/, 'names'],
+  ['POST', /^\/api\/validate$/, 'validation'],
+  ['GET', /^\/api\/clients\/[^/]+\/validate$/, 'validation'],
+  ['POST', /^\/api\/stt$/, 'voice'],
+  ['POST', /^\/api\/to-pdf$/, 'convert'],
+  ['POST', /^\/api\/pdf$/, 'convert'],
+  ['POST', /^\/api\/fill$/, 'fill'],
+  ['*', /^\/api\/clients(\/|$)/, null],
+  ['GET', /^\/api\/whoami$/, null],
+];
+web.use((req, res, next) => {
+  const rule = KEYED.find(([m, re]) => (m === '*' || m === req.method) && re.test(req.path));
+  if (!rule) return next();
+  const key = req.get('X-Api-Key');
+  if (!key) return res.status(401).json({ ok: false, error: 'api_key_missing' });
+  const rec = lookupKey(key);
+  if (!rec) return res.status(401).json({ ok: false, error: 'api_key_invalid' });
+  req.csc = { key, name: rec.name };
+  const type = rule[2];
+  if (type) res.on('finish', () => { if (res.statusCode >= 200 && res.statusCode < 300) countUsage(key, type); });
+  next();
+});
+
+web.get('/api/whoami', (req, res) => res.json({ ok: true, name: req.csc.name }));
+
+/** Admin view of per-key usage. ADMIN_KEY comes from the environment (server.js loads .env). */
+web.get('/api/usage', (req, res) => {
+  const admin = process.env.ADMIN_KEY;
+  if (!admin) return res.status(503).json({ ok: false, error: 'admin_key_not_set' });
+  if (req.get('X-Admin-Key') !== admin) return res.status(401).json({ ok: false, error: 'admin_key_invalid' });
+  res.json({ ok: true, rows: usage() });
+});
+
+/** Every static list a curated form's mrLookup refers to, by name. */
+function staticLists(curated) {
+  const out = {};
+  for (const l of Object.values(curated.mrLookup || {})) if (l.static && curated[l.static]) out[l.static] = curated[l.static];
+  return out;
+}
 
 web.get('/', (_req, res) => {
   res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
@@ -119,7 +170,7 @@ web.get('/api/strings', (req, res) => {
     'name_unreadable', 'upload_checking', 'upload_ok', 'upload_unknown_doc', 'upload_format_bad',
     'pop_upload', 'pop_summary', 'pop_listening', 'pop_to_text', 'pop_to_pages', 'pop_convert',
     'pop_compress', 'pop_choose_client', 'pop_no_option', 'panel_verify_field', 'pop_not_curated',
-    'pop_not_a_name',
+    'pop_not_a_name', 'pop_api_key',
   ];
   res.json(Object.fromEntries(keys.map((k) => [k, t(lang, k)])));
 });
@@ -216,6 +267,9 @@ web.post('/api/fill', async (req, res) => {
     chains: selectChains({ profile, url }),
     hints: hintRefs({ profile, url, fields }),
     verify: verifyRefs({ profile, url, fields }),
+    mrLookup: curatedForm.mrLookup || {},
+    districtsMr: curatedForm.districtsMr || {},
+    lists: staticLists(curatedForm),
     matched: Object.keys(values).length,
     total: fields.length,
   });
@@ -418,5 +472,22 @@ web.post('/api/check-names', (req, res) => {
 /** Which inputs on a curated form hold the applicant name / land holder name. */
 web.get('/api/form-fields', (req, res) => {
   const curated = findCurated(String(req.query.url || ''));
-  res.json({ nameFields: curated?.nameFields || [], landHolderFields: curated?.landHolderFields || [] });
+  res.json({
+    nameFields: curated?.nameFields || [],
+    landHolderFields: curated?.landHolderFields || [],
+    mrLookup: curated?.mrLookup || {},
+    lists: curated ? staticLists(curated) : {},
+  });
 });
+
+// Demo portal: serves the taluka / village lists the way the real portal does ([{Value, Text}]).
+// strLang is accepted and ignored (demo data is Marathi only).
+let demoLists = null;
+function demoList(kind, code) {
+  if (!demoLists) demoLists = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'forms', 'demo-portal-lists.json'), 'utf8'));
+  const table = demoLists[kind] || {};
+  const rows = Object.hasOwn(table, String(code)) ? table[String(code)] : [];
+  return rows.map(([Value, Text]) => ({ Value, Text }));
+}
+web.get('/en/StateGovEWS/District_SelectedState', (req, res) => res.json(demoList('talukas', req.query.Sel_DistrictName)));
+web.get('/en/StateGovEWS/Taluka_SelectedState', (req, res) => res.json(demoList('villages', req.query.Sel_TalukaName)));

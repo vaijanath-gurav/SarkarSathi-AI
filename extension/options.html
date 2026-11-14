@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GovTech Form Assistant - Options</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 24px; max-width: 480px; }
+  label { display: block; margin: 12px 0 4px; font-weight: 600; }
+  input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
+  button { margin: 12px 8px 0 0; padding: 6px 14px; font: inherit; cursor: pointer; }
+  #msg { margin-top: 12px; }
+  .ok { color: #0a7d2c; } .bad { color: #b00020; }
+</style>
+</head>
+<body>
+<h1>Options</h1>
+<label for="serverUrl">Server address</label>
+<input id="serverUrl" type="text" placeholder="http://localhost:3000">
+<label for="apiKey">API key</label>
+<input id="apiKey" type="password" autocomplete="off">
+<label><input id="toggle" type="checkbox"> Show API key</label>
+<button id="save">Save</button><button id="test">Test connection</button>
+<div id="msg"></div>
+<script src="options.js"></script>
+</body>
+</html>
