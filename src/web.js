@@ -9,6 +9,7 @@
 import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { extractDocument, classifyDocument, VLM_MODEL } from './extractor.js';
 import { validateEWS, validateDocument, toAsciiDigits, resolveNames } from './rulebook.js';
@@ -63,6 +64,25 @@ web.use((req, res, next) => {
   const type = rule[2];
   if (type) res.on('finish', () => { if (res.statusCode >= 200 && res.statusCode < 300) countUsage(key, type); });
   next();
+});
+
+// Dev auto-reload: newest mtime among files directly in extension/ and extension/vendor/. Free (not in KEYED).
+const EXT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'extension');
+let extVer = { t: 0, v: '0' };
+web.get('/dev/ext-version', (_req, res) => {
+  const now = Date.now();
+  if (now - extVer.t > 1000) {
+    let newest = 0;
+    for (const dir of [EXT_DIR, path.join(EXT_DIR, 'vendor')]) {
+      let names = [];
+      try { names = fs.readdirSync(dir); } catch { /* missing dir */ }
+      for (const n of names) {
+        try { const s = fs.statSync(path.join(dir, n)); if (s.isFile() && s.mtimeMs > newest) newest = s.mtimeMs; } catch { /* skip */ }
+      }
+    }
+    extVer = { t: now, v: String(newest) };
+  }
+  res.json({ v: extVer.v });
 });
 
 web.get('/api/whoami', (req, res) => res.json({ ok: true, name: req.csc.name }));
@@ -172,6 +192,7 @@ web.get('/api/strings', (req, res) => {
     'pop_upload', 'pop_summary', 'pop_listening', 'pop_to_text', 'pop_to_pages', 'pop_convert',
     'pop_compress', 'pop_choose_client', 'pop_no_option', 'panel_verify_field', 'pop_not_curated',
     'pop_not_a_name', 'pop_api_key',
+    'feat_fill', 'feat_voice', 'feat_convert', 'feat_compress', 'panel_pick_feature', 'voice_click_target', 'panel_hide',
   ];
   res.json(Object.fromEntries(keys.map((k) => [k, t(lang, k)])));
 });

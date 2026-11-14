@@ -1,6 +1,7 @@
-// Form assistant. One keybind per feature, each in a small pop-up from the bottom (R7). Never submits anything (D11). All fetches go via background.js (D13).
+// Form assistant. One movable window (Ctrl+Shift+F opens/closes it); features are buttons in it. Never submits anything (D11). All fetches go via background.js (D13).
 (() => {
-  if (window.__govtechPanel) return;
+  // Re-injection after an extension update: drop the old window; the old copy's listeners go inert.
+  document.getElementById('govtech-assistant-host')?.remove();
   window.__govtechPanel = true;
 
   const uploads = {};
@@ -24,38 +25,55 @@
   const baseName = (f) => f.name.replace(/\.[^.]+$/, '');
 
   const host = document.createElement('div');
-  host.style.cssText = 'all:initial;position:fixed;left:0;right:0;bottom:0;z-index:2147483647;pointer-events:none;';
+  host.id = 'govtech-assistant-host';
+  host.style.cssText = 'all:initial;position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;';
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `
     <style>
-      .pop{display:none;pointer-events:auto;position:absolute;left:50%;bottom:24px;width:min(560px, calc(100vw - 32px));max-height:60vh;overflow:auto;box-sizing:border-box;background:#fff;color:#111;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.28);padding:14px 16px;font:14px system-ui,'Nirmala UI',sans-serif;transform:translate(-50%,120%);opacity:0;transition:transform 180ms ease,opacity 180ms ease}
+      .p{font:13px sans-serif;width:320px;background:#fff;color:#111;border:1px solid #888;border-radius:6px;padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.3);max-height:90vh;overflow:auto}
+      .pop{display:none;position:fixed;left:0;top:0;opacity:0;transition:opacity 120ms ease}
       .pop.vis{display:block}
-      .pop.in{transform:translate(-50%,0);opacity:1}
-      button,select,input,textarea{font:14px system-ui,'Nirmala UI',sans-serif;margin:3px 0;box-sizing:border-box}
-      button{padding:5px 10px;cursor:pointer}
-      textarea{width:100%}
-      .head{display:flex;gap:8px;align-items:center}
-      .head b{flex:1}
-      .row{margin:6px 0}
-      .err{color:#b00020}.okc{color:#0a7d2c}.warn{color:#a15c00}
+      .pop.in{opacity:1}
+      button,select,input,textarea{font:13px sans-serif;margin:3px 0;box-sizing:border-box}
+      button{padding:5px 8px;cursor:pointer}
+      select,textarea{width:100%}
+      .head{display:flex;gap:6px;align-items:center;cursor:move;user-select:none}
+      .head b{flex:1;min-width:0}
+      .row{display:flex;gap:6px;align-items:flex-start}
+      .row textarea{flex:1}
+      .err{color:#b00020}.okc{color:#0a7d2c}.warn{color:#a15c00}.muted{color:#666}
       #status{margin-top:6px;font-weight:bold}
-      #body div{margin:3px 0}
+      .sec{border-top:1px solid #ddd;margin-top:6px;padding-top:6px}
+      .hide{display:none}
     </style>
-    <div class="pop" id="pop">
-      <div class="head">
+    <div class="p pop" id="pop">
+      <div class="head" id="head">
         <b id="title"></b>
-        <select id="lang"><option value="en">English</option><option value="hi">हिंदी</option><option value="mr">मराठी</option></select>
-        <select id="client"></select>
         <button id="close">✕</button>
       </div>
-      <div id="body"></div>
+      <select id="lang"><option value="en">English</option><option value="hi">हिंदी</option><option value="mr">मराठी</option></select>
+      <div data-k="panel_client"></div>
+      <select id="client"></select>
+      <div><button id="validate" data-k="panel_validate"></button></div>
+      <div id="vresult"></div>
+      <div><button data-f="FILL" data-k="panel_fill"></button></div>
+      <div id="sec_FILL" class="sec hide"></div>
+      <div><button data-f="VOICE" data-k="panel_voice"></button></div>
+      <div id="sec_VOICE" class="sec hide"></div>
+      <div><button data-f="FORMAT" data-k="panel_convert"></button></div>
+      <div id="sec_FORMAT" class="sec hide"></div>
+      <div><button data-f="COMPRESS" data-k="pop_compress"></button></div>
+      <div id="sec_COMPRESS" class="sec hide"></div>
+      <div id="sec_UPLOAD" class="sec hide"></div>
       <div id="status"></div>
     </div>`;
   document.documentElement.appendChild(host);
 
   const $ = (id) => root.getElementById(id);
   const pop = $('pop');
-  const body = $('body');
+  const SECS = {};
+  for (const f of ['FILL', 'VOICE', 'FORMAT', 'COMPRESS', 'UPLOAD']) SECS[f] = $('sec_' + f);
+  let body = document.createElement('div'); // the section the running feature writes into
   const status = (msg, cls) => { const s = $('status'); s.textContent = msg; s.className = cls || ''; };
   const T = (k) => STR[k] || '';
   // A rejected API key gets its own message instead of the generic failure text.
@@ -73,7 +91,7 @@
 
   function applyLabels() {
     for (const el of root.querySelectorAll('[data-k]')) el.textContent = T(el.dataset.k);
-    if (currentTitleKey) $('title').textContent = T(currentTitleKey);
+    $('title').textContent = T('panel_title');
   }
   const label = (el, key) => { el.dataset.k = key; el.textContent = T(key); return el; };
   const line = (text, cls, bold) => {
@@ -85,13 +103,67 @@
     return d;
   };
 
+  const W = 342; // 320 content + 2*10 padding + 2*1 border
+  let pos = null; // {x, y}
+  const clampPos = (p) => ({
+    x: Math.min(Math.max(p.x, 40 - W), window.innerWidth - 40),
+    y: Math.min(Math.max(p.y, 0), window.innerHeight - 40),
+  });
+  const applyPos = () => {
+    if (!pos) pos = { x: window.innerWidth - W - 12, y: 12 };
+    pos = clampPos(pos);
+    pop.style.left = pos.x + 'px';
+    pop.style.top = pos.y + 'px';
+  };
+  const posReady = new Promise((res) => {
+    try {
+      chrome.storage.local.get(['panelPos'], (v) => {
+        const p = v && v.panelPos;
+        if (p && typeof p.x === 'number' && typeof p.y === 'number') pos = { x: p.x, y: p.y };
+        res();
+      });
+    } catch (_) { res(); }
+  });
+  window.addEventListener('resize', () => { if (isOpen) applyPos(); });
+  let drag = null;
+  $('head').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || (e.target.closest && e.target.closest('select,button'))) return;
+    applyPos();
+    drag = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, id: e.pointerId };
+    try { $('head').setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    e.preventDefault();
+  });
+  $('head').addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    pos = clampPos({ x: e.clientX - drag.dx, y: e.clientY - drag.dy });
+    pop.style.left = pos.x + 'px';
+    pop.style.top = pos.y + 'px';
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    drag = null;
+    try { chrome.storage.local.set({ panelPos: { x: pos.x, y: pos.y } }); } catch (_) { /* ignore */ }
+  };
+  $('head').addEventListener('pointerup', endDrag);
+  $('head').addEventListener('pointercancel', endDrag);
+
+  function collapseSections() {
+    for (const el of Object.values(SECS)) el.classList.add('hide');
+  }
   function closePopup() {
     if (!isOpen) return;
     isOpen = false;
     clearTimeout(closeTimer);
     if (recorder && recorder.state === 'recording') { recCancelled = true; recorder.stop(); }
     pop.classList.remove('in');
-    setTimeout(() => { if (!isOpen) pop.classList.remove('vis'); }, 180);
+    setTimeout(() => { if (!isOpen) pop.classList.remove('vis'); }, 120);
+  }
+  function showWindow() {
+    applyPos();
+    pop.classList.add('vis');
+    void pop.offsetWidth;
+    pop.classList.add('in');
+    isOpen = true;
   }
   function openPopup(feature, titleKey) {
     clearTimeout(closeTimer);
@@ -99,20 +171,48 @@
     popSeq++;
     currentFeature = feature;
     currentTitleKey = titleKey;
-    $('title').textContent = T(titleKey);
+    $('title').textContent = T('panel_title');
+    collapseSections();
+    const sec = feature && SECS[feature];
+    body = sec || document.createElement('div');
     body.innerHTML = '';
+    if (sec) {
+      sec.classList.remove('hide');
+      if (feature === 'UPLOAD') {
+        const h = document.createElement('div');
+        h.style.fontWeight = 'bold';
+        label(h, 'pop_upload');
+        body.appendChild(h);
+      }
+    }
     status('');
-    pop.classList.add('vis');
-    void pop.offsetWidth;
-    pop.classList.add('in');
-    isOpen = true;
+    showWindow();
   }
-  function autoClose(ms) {
-    const seq = popSeq;
-    clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => { if (popSeq === seq) closePopup(); }, ms);
+  async function openHome() {
+    await posReady;
+    await ensureReady();
+    openPopup(null, 'panel_title');
   }
+  // The window stays open until the operator closes it; kept so callers don't break.
+  function autoClose() {}
   $('close').onclick = closePopup;
+  for (const b of root.querySelectorAll('button[data-f]')) {
+    b.onclick = () => {
+      const f = b.dataset.f;
+      if (f === 'FILL') runFill();
+      else if (f === 'VOICE') {
+        if (currentFeature === 'VOICE' && !SECS.VOICE.classList.contains('hide')) {
+          if (recorder && recorder.state === 'recording') { recCancelled = true; recorder.stop(); }
+          popSeq++;
+          currentFeature = null;
+          SECS.VOICE.classList.add('hide');
+          status('');
+        } else runVoice();
+      }
+      else if (f === 'FORMAT') runFormat();
+      else if (f === 'COMPRESS') runCompress();
+    };
+  }
   document.addEventListener('keydown', (e) => { if (isOpen && e.key === 'Escape') closePopup(); }, true);
 
   // ---- strings, language, clients ----------------------------------------
@@ -145,6 +245,7 @@
   function ensureReady() {
     if (!ready) {
       ready = (async () => {
+        await posReady;
         const v = await new Promise((res) => chrome.storage.local.get(['lang', 'client'], res));
         LANG = v.lang || 'en';
         savedClient = v.client || '';
@@ -177,9 +278,24 @@
     if (e.target !== host && e.target.matches && e.target.matches('input,textarea,select')) lastFocused = e.target;
   });
 
+  // Dev auto-reload: poll the (free) version route; on change tell background to reload.
+  let extV = null;
+  const verTimer = setInterval(async () => {
+    if (!chrome.runtime?.id) { clearInterval(verTimer); return; }
+    if (document.hidden) return;
+    try {
+      const r = await api('GET', '/dev/ext-version');
+      if (!r || r.v == null) return;
+      if (extV === null) extV = r.v;
+      else if (r.v !== extV) { clearInterval(verTimer); chrome.runtime.sendMessage({ type: 'EXT_VERSION_CHANGED' }); }
+    } catch { clearInterval(verTimer); }
+  }, 2000);
+
   chrome.runtime.onMessage.addListener((msg) => {
+    if (!chrome.runtime?.id) return;
     if (!msg || msg.type !== 'FEATURE') return;
-    if (msg.feature === 'FILL') runFill();
+    if (msg.feature === 'PANEL') { if (isOpen) closePopup(); else openHome(); }
+    else if (msg.feature === 'FILL') runFill();
     else if (msg.feature === 'VOICE') runVoice();
     else if (msg.feature === 'FORMAT') runFormat();
     else if (msg.feature === 'COMPRESS') runCompress();
@@ -233,6 +349,39 @@
     return { state: 'none' };
   }
 
+  // Fetch the client's validation and render it with mk(text, cls) (returns the created element).
+  // Created elements go into `lines`; older ones are removed first. Returns true if a problem line
+  // was shown, false if none, null if the call failed or `stillCurrent()` went false.
+  async function validateInto(key, mk, stillCurrent, lines) {
+    const v = await api('GET', `/api/clients/${encodeURIComponent(key)}/validate?lang=${LANG}`);
+    if (!stillCurrent()) return null;
+    if (v.error) { status(apiErr(v, v.error), 'err'); return null; }
+    for (const d of lines) d.remove();
+    lines.length = 0;
+    let probs = false;
+    const add = (...a) => { lines.push(mk(...a)); };
+    if (v.ok) add(T('all_clear'), 'okc');
+    else {
+      for (const e of v.errors || []) { add(e.message, 'err'); probs = true; }
+    }
+    // Phase 12: an incomplete client used to show a blank box.
+    if (v.missing_message) { add(v.missing_message, 'err'); probs = true; }
+    // Phase 9: fields the operator types from paper. Amber, not red: not a failure.
+    for (const n of v.notices || []) add(n.message, 'warn');
+    return probs;
+  }
+  // Validate button: the same validation rendering as Fill, without filling anything.
+  let vLines = [];
+  $('validate').onclick = async () => {
+    await ensureReady();
+    const key = $('client').value;
+    if (!key) return status(T('pop_choose_client'), 'warn');
+    status('');
+    const out = $('vresult');
+    const mk = (text, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; out.appendChild(d); return d; };
+    await validateInto(key, mk, () => true, vLines);
+  };
+
   // ---- FILL ---------------------------------------------------------------
   async function runFill() {
     await ensureReady();
@@ -244,21 +393,7 @@
     // Validation lines; re-rendered (old ones removed) when the operator types an override.
     let valLines = [];
     const renderValidation = async () => {
-      const v = await api('GET', `/api/clients/${encodeURIComponent(key)}/validate?lang=${LANG}`);
-      if (popSeq !== seq) return null;
-      if (v.error) { status(apiErr(v, v.error), 'err'); return null; }
-      for (const d of valLines) d.remove();
-      valLines = [];
-      let probs = false;
-      const add = (...a) => { valLines.push(line(...a)); };
-      if (v.ok) add(T('all_clear'), 'okc');
-      else {
-        for (const e of v.errors || []) { add(e.message, 'err'); probs = true; }
-      }
-      // Phase 12: an incomplete client used to show a blank box.
-      if (v.missing_message) { add(v.missing_message, 'err'); probs = true; }
-      // Phase 9: fields the operator types from paper. Amber, not red: not a failure.
-      for (const n of v.notices || []) add(n.message, 'warn');
+      const probs = await validateInto(key, line, () => popSeq === seq, valLines);
       return probs;
     };
     const problems = await renderValidation();
@@ -412,23 +547,25 @@
       const a = document.activeElement;
       if (a && a.matches && a.matches('input,textarea,select')) target = a;
     }
-    if (!target) return status(T('panel_click_field'), 'err');
-
-    line(labelFor(target), '', true);
+    line(target ? labelFor(target) : '', '', true);
+    const hint = target ? null : line(T('voice_click_target'), 'warn');
     const ta = document.createElement('textarea');
     ta.rows = 3;
-    body.appendChild(ta);
     const rec = document.createElement('button');
     label(rec, 'panel_record');
     const ins = document.createElement('button');
     label(ins, 'panel_insert');
-    const brow = document.createElement('div');
-    brow.append(rec, ' ', ins);
-    body.appendChild(brow);
+    const vrow = document.createElement('div');
+    vrow.className = 'row';
+    vrow.append(ta, rec);
+    body.appendChild(vrow);
+    body.appendChild(ins);
 
     const ffReady = loadFormFields().catch(() => { /* no service: selects fall back to visible text */ });
     const doInsert = async () => {
       const text = ta.value;
+      if (lastFocused && document.contains(lastFocused)) target = lastFocused;
+      if (!target) { if (hint) hint.className = 'err'; else line(T('voice_click_target'), 'err'); return; }
       await ffReady;
       if (target.tagName === 'SELECT') {
         const options = [...target.options].map((o) => ({ value: o.value, text: o.text }));
@@ -484,7 +621,7 @@
           rec.textContent = T('panel_record');
           const blob = new Blob(chunks, { type: mine.mimeType });
           const dataUrl = await readDataUrl(blob);
-          const r = await api('POST', '/api/stt', { audioBase64: dataUrl, lang: LANG, client: $('client').value || '', field: labelFor(target) });
+          const r = await api('POST', '/api/stt', { audioBase64: dataUrl, lang: LANG, client: $('client').value || '', field: target ? labelFor(target) : '' });
           if (r.ok && r.rejected === 'not_a_name') { ta.value = ''; ta.focus(); status(T('pop_not_a_name'), 'err'); }
           else if (r.ok && r.text) { ta.value = r.text; ta.focus(); status(''); }
           else status(apiErr(r, T('voice_empty')), 'err');

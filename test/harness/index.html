@@ -7,7 +7,6 @@
 <script>
 // Fake chrome.* APIs. Must run before any extension script.
 (function () {
-  const BASE = 'http://localhost:3000';
   const store = {};
   const csListeners = [];
   const offscreenListeners = [];
@@ -33,9 +32,16 @@
     const entry = { path, method: method || 'GET', status: null };
     log.push(entry);
     try {
-      const res = await fetch(BASE + path, {
+      const res = await fetch(path, {
         method: method || 'GET',
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers: (() => {
+          const hd = {};
+          if (body) hd['Content-Type'] = 'application/json';
+          let k = null;
+          try { k = localStorage.getItem('harnessKey'); } catch (_) { /* none */ }
+          if (k) hd['X-Api-Key'] = k;
+          return Object.keys(hd).length ? hd : undefined;
+        })(),
         body: body ? JSON.stringify(body) : undefined,
       });
       entry.status = res.status;
@@ -70,7 +76,7 @@
       set(obj, cb) { return withCb(() => { Object.assign(store, obj); }, cb); },
     } },
     runtime: {
-      getURL: (p) => '/extension/' + p,
+      getURL: (p) => (location.pathname.startsWith('/harness') ? '/ext/' : '/extension/') + p,
       onMessage: { addListener(fn) { (routeToOffscreen ? offscreenListeners : csListeners).push(fn); } },
       sendMessage(msg, cb) {
         let p;
@@ -103,6 +109,7 @@
 <body>
 <div id="harness-banner">
   <b>EXTENSION TEST HARNESS — not a government site</b>
+  <button onclick="harness.feature('PANEL')">PANEL</button>
   <button onclick="harness.feature('FILL')">FILL</button>
   <button onclick="harness.feature('VOICE')">VOICE</button>
   <button onclick="harness.feature('FORMAT')">FORMAT</button>
@@ -121,6 +128,7 @@
     document.body.appendChild(s);
   });
 
+  const EXT = location.pathname.startsWith('/harness') ? '/ext/' : '/extension/';
   (async () => {
     try {
       // 2. Load the demo form.
@@ -140,14 +148,14 @@
       });
 
       // 3. PDF engine (offscreen listeners kept separate).
-      await loadScript('/extension/vendor/pdf-lib.min.js', false);
+      await loadScript(EXT + 'vendor/pdf-lib.min.js', false);
       window.harness._routeOffscreen(true);
-      try { await loadScript('/extension/offscreen.js', true); }
+      try { await loadScript(EXT + 'offscreen.js', true); }
       finally { window.harness._routeOffscreen(false); }
 
       // 4. Real content scripts.
-      await loadScript('/extension/pick.js', false);
-      await loadScript('/extension/content.js', false);
+      await loadScript(EXT + 'pick.js', false);
+      await loadScript(EXT + 'content.js', false);
       console.log('[harness] ready');
     } catch (e) {
       console.error('[harness]', e);

@@ -89,5 +89,12 @@
   "panel_choose_image": "एक प्रतिमा निवडा",
   "panel_pdf_failed": "PDF रूपांतर अयशस्वी झाले.",
   "panel_fill_failed": "फॉर्म भरता आला नाही.",
-  "panel_done_kb": "पूर्ण — {n} KB"
+  "panel_done_kb": "पूर्ण — {n} KB",
+  "feat_fill": "भरा",
+  "feat_voice": "आवाज",
+  "feat_convert": "बदला",
+  "feat_compress": "लहान करा",
+  "panel_pick_feature": "वर एखादी सुविधा निवडा.",
+  "voice_click_target": "भरायच्या फील्डवर क्लिक करा, मग Insert दाबा.",
+  "panel_hide": "लपवा"
 }

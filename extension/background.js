@@ -3,22 +3,21 @@
 const DEFAULT_URL = 'http://localhost:3000';
 const settings = () => chrome.storage.local.get({ serverUrl: DEFAULT_URL, apiKey: '' });
 
-const FEATURE = {
-  'fill-form': 'FILL',
-  'voice-chat': 'VOICE',
-  'change-format': 'FORMAT',
-  'compress': 'COMPRESS',
-  'pick-client': 'CLIENT',
-};
+const FEATURE = { 'open-panel': 'PANEL' };
 
-chrome.commands.onCommand.addListener(async (command) => {
-  const feature = FEATURE[command];
-  if (!feature) return;
+async function sendFeature(feature) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab && tab.id != null) {
     try { await chrome.tabs.sendMessage(tab.id, { type: 'FEATURE', feature }); } catch { /* no content script on this page */ }
   }
+}
+
+chrome.commands.onCommand.addListener(async (command) => {
+  const feature = FEATURE[command];
+  if (feature) await sendFeature(feature);
 });
+
+chrome.action.onClicked.addListener(() => sendFeature('PANEL'));
 
 async function ensureOffscreen() {
   if (await chrome.offscreen.hasDocument()) return;
@@ -29,8 +28,37 @@ async function ensureOffscreen() {
   });
 }
 
+// Dev auto-reload: reload the extension when the server reports changed extension files.
+let extVersion = null;
+async function checkExtVersion() {
+  try {
+    const { serverUrl } = await settings();
+    const res = await fetch(String(serverUrl || DEFAULT_URL).replace(/\/+$/, '') + '/dev/ext-version');
+    const { v } = await res.json();
+    if (v == null) return;
+    if (extVersion === null) extVersion = v;
+    else if (v !== extVersion) chrome.runtime.reload();
+  } catch { /* server down: silent */ }
+}
+checkExtVersion();
+setInterval(checkExtVersion, 2000);
+
+// After a reload, put the new window into pages that are already open.
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason !== 'update') return;
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.id == null || !/^https?:/i.test(tab.url || '')) continue;
+      try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['pick.js', 'content.js'] }); } catch { /* injection not allowed here */ }
+    }
+  } catch { /* ignore */ }
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg) return false;
+
+  if (msg.type === 'EXT_VERSION_CHANGED') { chrome.runtime.reload(); return false; }
 
   if (msg.type === 'PDF') {
     (async () => {

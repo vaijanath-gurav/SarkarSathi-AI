@@ -89,5 +89,12 @@
   "panel_choose_image": "Choose an image",
   "panel_pdf_failed": "PDF conversion failed.",
   "panel_fill_failed": "Could not fill the form.",
-  "panel_done_kb": "Done — {n} KB"
+  "panel_done_kb": "Done — {n} KB",
+  "feat_fill": "Fill",
+  "feat_voice": "Voice",
+  "feat_convert": "Convert",
+  "feat_compress": "Compress",
+  "panel_pick_feature": "Choose a feature above.",
+  "voice_click_target": "Click the form field to fill, then press Insert.",
+  "panel_hide": "Hide"
 }

@@ -89,5 +89,12 @@
   "panel_choose_image": "एक छवि चुनें",
   "panel_pdf_failed": "PDF रूपांतरण विफल रहा।",
   "panel_fill_failed": "फॉर्म नहीं भरा जा सका।",
-  "panel_done_kb": "पूर्ण — {n} KB"
+  "panel_done_kb": "पूर्ण — {n} KB",
+  "feat_fill": "भरें",
+  "feat_voice": "आवाज़",
+  "feat_convert": "बदलें",
+  "feat_compress": "छोटा करें",
+  "panel_pick_feature": "ऊपर कोई सुविधा चुनें।",
+  "voice_click_target": "भरने वाले फ़ील्ड पर क्लिक करें, फिर Insert दबाएँ।",
+  "panel_hide": "छिपाएँ"
 }
