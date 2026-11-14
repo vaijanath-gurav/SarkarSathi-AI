@@ -4,7 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const dirOf = () => path.resolve(process.env.KEYS_DIR || path.join(process.cwd(), 'keys'));
+// Rates (rupees per event) agreed for the demo. One fill already triggers a validation,
+// so validations are not charged separately. Every other usage type is included at 0.
+export const RATES = { document: 2, fill: 10 };
+
+const dirOf =() => path.resolve(process.env.KEYS_DIR || path.join(process.cwd(), 'keys'));
 const states = new Map(); // dir -> { usage, queue, keys, keysAt }
 
 function readJson(file) {
@@ -71,4 +75,21 @@ export function usage() {
     }
   }
   return rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.name.localeCompare(b.name)));
+}
+
+/** One key's own counts: today and the current local month, by type. */
+export function myUsage(key) {
+  const { dir, s } = state();
+  const keys = readJson(path.join(dir, 'keys.json'));
+  const day = today();
+  const month = day.slice(0, 7);
+  const out = { name: keys[key]?.name || '', today: {}, todayTotal: 0, month: {}, monthTotal: 0, todayAmount: 0, monthAmount: 0, rates: RATES };
+  for (const [date, counts] of Object.entries(s.usage[key] || {})) {
+    for (const [type, n] of Object.entries(counts)) {
+      const amt = n * (RATES[type] || 0);
+      if (date === day) { out.today[type] = (out.today[type] || 0) + n; out.todayTotal += n; out.todayAmount += amt; }
+      if (date.startsWith(month)) { out.month[type] = (out.month[type] || 0) + n; out.monthTotal += n; out.monthAmount += amt; }
+    }
+  }
+  return out;
 }

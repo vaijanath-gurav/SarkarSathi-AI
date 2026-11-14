@@ -83,6 +83,21 @@ check('OPTIONS other origin -> 204, no CORS headers', r.status === 204 && r.head
 r = await call('OPTIONS', '/api/fill', { headers: { Origin: 'chrome-extension://abc' } });
 check('OPTIONS extension origin -> 204 with CORS', r.status === 204 && r.headers.get('access-control-allow-origin') === 'chrome-extension://abc');
 
+console.log('\nRates and amounts');
+{
+  process.env.KEYS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'keys-rates-'));
+  const { createKey: ck, count, myUsage } = await import('./keys.js');
+  const k2 = ck('Rates CSC');
+  for (let i = 0; i < 3; i++) await count(k2, 'document');
+  for (let i = 0; i < 2; i++) await count(k2, 'fill');
+  for (let i = 0; i < 4; i++) await count(k2, 'voice');
+  const u = myUsage(k2);
+  check('todayTotal 9', u.todayTotal === 9);
+  check('todayAmount 26', u.todayAmount === 26);
+  check('monthAmount 26', u.monthAmount === 26);
+  check('rates document 2, fill 10', u.rates.document === 2 && u.rates.fill === 10);
+}
+
 server.close();
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

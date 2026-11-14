@@ -10,14 +10,14 @@ import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 
-import { extractDocument } from './extractor.js';
+import { extractDocument, classifyDocument, VLM_MODEL } from './extractor.js';
 import { validateEWS, validateDocument, toAsciiDigits, resolveNames } from './rulebook.js';
 import { generateEWSForm } from './pdf.js';
 import { t } from './i18n/index.js';
 import { REVIEW_FIELDS } from './review.js';
 import { listClients, getProfile, warmAll, setOverride } from './clients.js';
 import { LANGUAGES } from './i18n/index.js';
-import { lookupKey, count as countUsage, usage } from './keys.js';
+import { lookupKey, count as countUsage, usage, myUsage } from './keys.js';
 import { matchFields, operatorRefs, selectChains, hintRefs, verifyRefs, findCurated } from './fieldmap.js';
 
 export const web = express.Router();
@@ -48,6 +48,7 @@ const KEYED = [
   ['POST', /^\/api\/to-pdf$/, 'convert'],
   ['POST', /^\/api\/pdf$/, 'convert'],
   ['POST', /^\/api\/fill$/, 'fill'],
+  ['GET', /^\/api\/my-usage$/, null],
   ['*', /^\/api\/clients(\/|$)/, null],
   ['GET', /^\/api\/whoami$/, null],
 ];
@@ -452,12 +453,8 @@ web.post('/api/check-upload', async (req, res) => {
   }
 });
 
-/** Batch name check: all uploads against the NAME / land-holder boxes (find the odd one out). */
-web.post('/api/check-names', (req, res) => {
-  const { uploads, form, lang: l } = req.body || {};
-  const lang = LANGUAGES.includes(l) ? l : 'en';
-  if (!Array.isArray(uploads)) return res.status(400).json({ error: 'uploads is required' });
-  const r = resolveNames(uploads, form || {});
+/** resolveNames result -> { perDoc: {key: [message]}, notices: [message] } in one language. */
+function nameMessages(r, lang) {
   const msg = (e) => {
     const p = e.params || {};
     if (e.key === 'form_name_suspect') return t(lang, e.key, { ...p, docs: p.docs.map((d) => t(lang, d)).join(', ') });
@@ -466,8 +463,28 @@ web.post('/api/check-names', (req, res) => {
   };
   const perDoc = {};
   for (const [k, list] of Object.entries(r.perDoc)) perDoc[k] = list.map(msg);
-  res.json({ perDoc, notices: r.notices.map(msg) });
+  return { perDoc, notices: r.notices.map(msg) };
+}
+
+/** Batch name check: all uploads against the NAME / land-holder boxes (find the odd one out). */
+web.post('/api/check-names', (req, res) => {
+  const { uploads, form, lang: l } = req.body || {};
+  const lang = LANGUAGES.includes(l) ? l : 'en';
+  if (!Array.isArray(uploads)) return res.status(400).json({ error: 'uploads is required' });
+  res.json(nameMessages(resolveNames(uploads, form || {}), lang));
 });
+
+/** Free: is each local service up? */
+web.get('/api/status', async (_req, res) => {
+  const up = async (url) => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok; } catch { return false; } };
+  const [ai, voice] = await Promise.all([
+    up(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/tags`),
+    up(`${process.env.STT_URL || 'http://localhost:5005'}/health`),
+  ]);
+  res.json({ server: true, ai, aiModel: VLM_MODEL, voice });
+});
+
+web.get('/api/my-usage', (req, res) => res.json(myUsage(req.csc.key)));
 
 /** Which inputs on a curated form hold the applicant name / land holder name. */
 web.get('/api/form-fields', (req, res) => {

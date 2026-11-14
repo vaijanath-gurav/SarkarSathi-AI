@@ -8,7 +8,7 @@ import path from 'node:path';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // Must match ADR-3 in BUILD_SPEC.md. Not qwen2-vl: that is a generation behind and
 // markedly worse on Devanagari. Not the 8b: it will not fit 6GB VRAM.
-const VLM_MODEL = process.env.VLM_MODEL || 'qwen3-vl:4b-instruct';
+export const VLM_MODEL = process.env.VLM_MODEL || 'qwen3-vl:4b-instruct';
 const USE_MOCK = process.env.USE_MOCK !== 'false';
 
 export const SYSTEM_PROMPT = `You are a highly secure, deterministic Government Document OCR Data Extraction Engine. Your sole function is to analyze the provided image, extract the required fields, and output them STRICTLY as a valid JSON object.
@@ -197,10 +197,11 @@ export async function extractDocument(imageBuffer, docType) {
 
 /**
  * Phase 14 (R1): which document is this? Used by upload capture when the upload slot's
- * label does not say. Returns 'identity' | 'income' | 'land' | null. Mock mode: null.
+ * label does not say. Returns 'identity' | 'income' | 'land' | null. Mock mode: null, unless the test hook
+ * MOCK_CLASSIFY (identity|income|land) is set in the environment.
  */
 export async function classifyDocument(imageBuffer) {
-  if (USE_MOCK) return null;
+  if (USE_MOCK) return ['identity', 'income', 'land'].includes(process.env.MOCK_CLASSIFY) ? process.env.MOCK_CLASSIFY : null;
   const raw = await ollamaGenerate(
     {
       prompt: 'Which document is this image? Answer with exactly one word: AADHAAR, INCOME, LAND or OTHER. LAND means a 7/12 extract (सातबारा) or another land record. INCOME means an income certificate (उत्पन्नाचा दाखला / आय प्रमाण पत्र).',

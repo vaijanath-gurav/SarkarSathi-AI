@@ -7,7 +7,7 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import { extractDocument } from './extractor.js';
 
-const MASTER = process.env.MASTER_DIR || path.join(process.cwd(), 'MASTER');
+export const MASTER = process.env.MASTER_DIR || path.join(process.cwd(), 'MASTER');
 
 /** Exact folder names are a contract with the operator. Do not normalise. */
 export const FOLDERS = {
@@ -16,7 +16,7 @@ export const FOLDERS = {
   'LAND RECORDS': 'land',
 };
 
-const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+export const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 export async function ensureFolders() {
   for (const folder of Object.keys(FOLDERS)) {
@@ -148,7 +148,7 @@ export function watchMaster() {
 
 const OVERRIDE_PATHS = ['land.survey_number', 'land.total_area_hectares', 'land.record_print_date'];
 
-function overridesFile(key) {
+export function overridesFile(key) {
   return path.join(MASTER, `${key}.overrides.json`);
 }
 
